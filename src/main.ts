@@ -29,7 +29,7 @@ app.innerHTML = `
 
     <section class="controls" aria-label="Controls">
       <button id="randomize-button" type="button">New Maze</button>
-      <button id="clear-button" type="button">Open Field</button>
+      <button id="clear-button" type="button">New Field</button>
       <button id="start-button" type="button">Start</button>
       <button id="pause-button" type="button">Pause</button>
       <button id="reset-button" type="button">Reset</button>
