@@ -1,10 +1,9 @@
-export type CellKind = "empty" | "wall" | "weight" | "start" | "target";
+export type CellKind = "empty" | "wall" | "start" | "target";
 
 export interface Cell {
   row: number;
   col: number;
   kind: CellKind;
-  weight: number;
 }
 
 export interface GridSnapshot {

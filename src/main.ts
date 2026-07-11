@@ -4,10 +4,9 @@ import { render } from "./renderer";
 import { SearchSound } from "./sound";
 import type { Cell, GridSnapshot, SearchEvent, VisualizerState } from "./types";
 
-const ROWS = 21;
-const COLS = 37;
+const ROWS = 41;
+const COLS = 73;
 const DEFAULT_OPENINGS = 9;
-const DEFAULT_TERRAIN = 14;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -43,11 +42,6 @@ app.innerHTML = `
       <label class="control-field compact-field">
         Openings
         <input id="density-slider" type="range" min="0" max="28" value="${DEFAULT_OPENINGS}" />
-      </label>
-
-      <label class="control-field compact-field">
-        Terrain
-        <input id="terrain-slider" type="range" min="0" max="35" value="${DEFAULT_TERRAIN}" />
       </label>
 
       <label class="control-field compact-field">
@@ -111,7 +105,6 @@ const elements = {
   clearButton: getElement<HTMLButtonElement>("#clear-button"),
   algorithmSelect: getElement<HTMLSelectElement>("#algorithm-select"),
   densitySlider: getElement<HTMLInputElement>("#density-slider"),
-  terrainSlider: getElement<HTMLInputElement>("#terrain-slider"),
   speedSlider: getElement<HTMLInputElement>("#speed-slider"),
   soundButton: getElement<HTMLButtonElement>("#sound-button"),
   volumeSlider: getElement<HTMLInputElement>("#volume-slider"),
@@ -161,34 +154,25 @@ const chooseTargetId = (passageIds: string[], startId: string): string => {
   return targetPool[Math.floor(Math.random() * targetPool.length)] ?? distantPassages[0] ?? startId;
 };
 
-const applyTerrain = (
+const applyEndpoints = (
   cells: Cell[],
-  terrainDensity: number,
   startId: string,
   targetId: string,
 ): Cell[] =>
   cells.map((cell) => {
     const id = idFor(cell.row, cell.col);
     if (id === startId) {
-      return { ...cell, kind: "start", weight: 1 };
+      return { ...cell, kind: "start" };
     }
 
     if (id === targetId) {
-      return { ...cell, kind: "target", weight: 1 };
+      return { ...cell, kind: "target" };
     }
 
-    if (cell.kind === "wall") {
-      return cell;
-    }
-
-    if (Math.random() * 100 < terrainDensity) {
-      return { ...cell, kind: "weight", weight: 4 };
-    }
-
-    return { ...cell, kind: "empty", weight: 1 };
+    return cell.kind === "wall" ? cell : { ...cell, kind: "empty" };
   });
 
-const createMazeGrid = (openings: number, terrainDensity: number): GridSnapshot => {
+const createMazeGrid = (openings: number): GridSnapshot => {
   const openIds = new Set<string>();
   const startId = idFor(1, 1);
   const stack = [startId];
@@ -247,7 +231,6 @@ const createMazeGrid = (openings: number, terrainDensity: number): GridSnapshot 
         row,
         col,
         kind: openIds.has(id) ? "empty" : "wall",
-        weight: 1,
       });
     }
   }
@@ -255,7 +238,7 @@ const createMazeGrid = (openings: number, terrainDensity: number): GridSnapshot 
   return {
     rows: ROWS,
     cols: COLS,
-    cells: applyTerrain(cells, terrainDensity, startId, targetId),
+    cells: applyEndpoints(cells, startId, targetId),
     startId,
     targetId,
   };
@@ -271,14 +254,14 @@ const createOpenGrid = (): GridSnapshot => {
 
   for (let row = 0; row < ROWS; row += 1) {
     for (let col = 0; col < COLS; col += 1) {
-      cells.push({ row, col, kind: "empty", weight: 1 });
+      cells.push({ row, col, kind: "empty" });
     }
   }
 
   const grid = {
     rows: ROWS,
     cols: COLS,
-    cells: applyTerrain(cells, Number(elements.terrainSlider.value), startId, targetId),
+    cells: applyEndpoints(cells, startId, targetId),
     startId,
     targetId,
   };
@@ -287,8 +270,8 @@ const createOpenGrid = (): GridSnapshot => {
     ...grid,
     cells: grid.cells.map((cell) =>
       cell.kind === "start" || cell.kind === "target"
-        ? { ...cell, weight: 1 }
-        : { ...cell, kind: "empty", weight: 1 },
+        ? cell
+        : { ...cell, kind: "empty" },
     ),
   };
 };
@@ -310,7 +293,7 @@ const createState = (grid: GridSnapshot): VisualizerState => ({
   missed: false,
 });
 
-let state = createState(createMazeGrid(DEFAULT_OPENINGS, DEFAULT_TERRAIN));
+let state = createState(createMazeGrid(DEFAULT_OPENINGS));
 let playbackTimer: number | undefined;
 const sound = new SearchSound();
 sound.setVolume(Number(elements.volumeSlider.value) / 100);
@@ -408,9 +391,7 @@ const resetRun = (): void => {
 
 const randomize = (): void => {
   clearPlaybackTimer();
-  state = createState(
-    createMazeGrid(Number(elements.densitySlider.value), Number(elements.terrainSlider.value)),
-  );
+  state = createState(createMazeGrid(Number(elements.densitySlider.value)));
   renderCurrentState();
 };
 
@@ -433,21 +414,16 @@ const cycleCellKind = (id: string): void => {
 
   if (cell.kind === "empty") {
     cell.kind = "wall";
-    cell.weight = 1;
-  } else if (cell.kind === "wall") {
-    cell.kind = "weight";
-    cell.weight = 4;
   } else {
     cell.kind = "empty";
-    cell.weight = 1;
   }
 
   state = createState(nextGrid);
   renderCurrentState();
 };
 
-elements.startButton.addEventListener("click", async () => {
-  await sound.unlock();
+elements.startButton.addEventListener("click", () => {
+  void sound.unlock();
   const algorithm = selectedAlgorithm();
 
   state.events = algorithm.search(cloneGrid(state.grid));
@@ -485,7 +461,6 @@ elements.randomizeButton.addEventListener("click", randomize);
 elements.clearButton.addEventListener("click", clearGrid);
 elements.algorithmSelect.addEventListener("change", renderCurrentState);
 elements.densitySlider.addEventListener("input", randomize);
-elements.terrainSlider.addEventListener("input", randomize);
 elements.gridContainer.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
@@ -498,14 +473,14 @@ elements.gridContainer.addEventListener("click", (event) => {
   }
 });
 
-elements.soundButton.addEventListener("click", async () => {
+elements.soundButton.addEventListener("click", () => {
   const nextEnabled = !sound.isEnabled();
   sound.setEnabled(nextEnabled);
   elements.soundButton.textContent = nextEnabled ? "Sound On" : "Sound Off";
   elements.soundButton.setAttribute("aria-pressed", String(nextEnabled));
 
   if (nextEnabled) {
-    await sound.unlock();
+    void sound.unlock();
   }
 });
 

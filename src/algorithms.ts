@@ -196,7 +196,7 @@ export const dijkstraSearch = (grid: GridSnapshot): SearchEvent[] => {
         return;
       }
 
-      const nextDistance = (distance.get(current.id) ?? 0) + neighbor.weight;
+      const nextDistance = (distance.get(current.id) ?? 0) + 1;
       if (nextDistance >= (distance.get(id) ?? Number.POSITIVE_INFINITY)) {
         return;
       }
@@ -239,7 +239,7 @@ export const aStarSearch = (grid: GridSnapshot): SearchEvent[] => {
         return;
       }
 
-      const nextDistance = (distance.get(current.id) ?? 0) + neighbor.weight;
+      const nextDistance = (distance.get(current.id) ?? 0) + 1;
       if (nextDistance >= (distance.get(id) ?? Number.POSITIVE_INFINITY)) {
         return;
       }

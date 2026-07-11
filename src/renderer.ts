@@ -14,7 +14,6 @@ interface RenderElements {
   clearButton: HTMLButtonElement;
   algorithmSelect: HTMLSelectElement;
   densitySlider: HTMLInputElement;
-  terrainSlider: HTMLInputElement;
 }
 
 const cellId = (cell: Cell): string => `${cell.row}:${cell.col}`;
@@ -35,7 +34,6 @@ const updateButtonStates = (
   elements.clearButton.disabled = state.isRunning;
   elements.algorithmSelect.disabled = state.isRunning;
   elements.densitySlider.disabled = state.isRunning;
-  elements.terrainSlider.disabled = state.isRunning;
 };
 
 export const render = (
@@ -56,7 +54,7 @@ export const render = (
         "aria-label",
         `${cell.kind} location row ${cell.row + 1}, column ${cell.col + 1}`,
       );
-      tile.title = cell.kind === "weight" ? `Weight ${cell.weight}` : cell.kind;
+      tile.title = cell.kind;
 
       if (state.frontierIds.has(id)) {
         tile.classList.add("frontier");
@@ -80,10 +78,6 @@ export const render = (
 
       if (cell.kind === "target") {
         tile.textContent = "T";
-      }
-
-      if (cell.kind === "weight") {
-        tile.textContent = String(cell.weight);
       }
 
       return tile;
