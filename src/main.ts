@@ -319,7 +319,7 @@ const clearPlaybackTimer = (): void => {
 
 const speedToDelay = (): number => {
   const speed = Number(elements.speedSlider.value);
-  return Math.max(6, 260 - speed * 2.45);
+  return Math.max(1, (260 - speed * 2.45) / 9);
 };
 
 const applyEvent = (event: SearchEvent): void => {
