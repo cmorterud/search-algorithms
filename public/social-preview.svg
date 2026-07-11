@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#f7f4ef" />
+  <rect x="70" y="70" width="1060" height="490" rx="18" fill="#ebe4d9" stroke="#d7d1c7" stroke-width="4" />
+  <g transform="translate(118 126)">
+    <rect x="0" y="0" width="44" height="44" rx="7" fill="#3d7d46" />
+    <rect x="58" y="0" width="44" height="44" rx="7" fill="#276a73" />
+    <rect x="116" y="0" width="44" height="44" rx="7" fill="#276a73" />
+    <rect x="174" y="0" width="44" height="44" rx="7" fill="#d6a938" />
+    <rect x="232" y="0" width="44" height="44" rx="7" fill="#19212a" />
+    <rect x="290" y="0" width="44" height="44" rx="7" fill="#ffffff" stroke="#276a73" stroke-width="3" />
+    <rect x="348" y="0" width="44" height="44" rx="7" fill="#c9503f" />
+    <rect x="0" y="58" width="44" height="44" rx="7" fill="#ffffff" stroke="#276a73" stroke-width="3" />
+    <rect x="58" y="58" width="44" height="44" rx="7" fill="#19212a" />
+    <rect x="116" y="58" width="44" height="44" rx="7" fill="#276a73" />
+    <rect x="174" y="58" width="44" height="44" rx="7" fill="#d6a938" />
+    <rect x="232" y="58" width="44" height="44" rx="7" fill="#276a73" />
+    <rect x="290" y="58" width="44" height="44" rx="7" fill="#276a73" />
+    <rect x="348" y="58" width="44" height="44" rx="7" fill="#ffffff" stroke="#276a73" stroke-width="3" />
+  </g>
+  <text x="118" y="380" fill="#121820" font-family="Inter, Arial, sans-serif" font-size="82" font-weight="800">Search Visualizer</text>
+  <text x="122" y="442" fill="#53606d" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="600">BFS, DFS, Dijkstra, and A* replayed as pure events.</text>
+</svg>
