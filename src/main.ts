@@ -313,18 +313,23 @@ const renderCurrentState = (): void => {
 const clearPlaybackTimer = (): void => {
   if (playbackTimer !== undefined) {
     window.clearTimeout(playbackTimer);
+    window.cancelAnimationFrame(playbackTimer);
     playbackTimer = undefined;
   }
 };
 
-const speedToDelay = (): number => {
+const speedToBatchSize = (): number => {
   const speed = Number(elements.speedSlider.value);
-  return Math.max(1, (260 - speed * 2.45) / 9);
+  const normalizedSpeed = speed / 100;
+
+  return Math.max(1, Math.round(1 + normalizedSpeed * normalizedSpeed * 90));
 };
 
-const applyEvent = (event: SearchEvent): void => {
+const applyEvent = (event: SearchEvent, audible = true): void => {
   state.activeId = undefined;
-  sound.playEvent(event);
+  if (audible) {
+    sound.playEvent(event);
+  }
 
   switch (event.type) {
     case "frontier":
@@ -371,16 +376,20 @@ const playNextEvent = (): void => {
     return;
   }
 
-  const event = state.events[state.currentEventIndex];
-  if (!event) {
-    finishRun();
-    return;
+  const batchSize = speedToBatchSize();
+  for (let step = 0; step < batchSize; step += 1) {
+    const event = state.events[state.currentEventIndex];
+    if (!event) {
+      finishRun();
+      return;
+    }
+
+    applyEvent(event, step === batchSize - 1 || state.currentEventIndex === state.events.length - 1);
+    state.currentEventIndex += 1;
   }
 
-  applyEvent(event);
-  state.currentEventIndex += 1;
   renderCurrentState();
-  playbackTimer = window.setTimeout(playNextEvent, speedToDelay());
+  playbackTimer = window.requestAnimationFrame(playNextEvent);
 };
 
 const resetRun = (): void => {
