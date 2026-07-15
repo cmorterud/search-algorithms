@@ -14,6 +14,11 @@ interface RenderElements {
   clearButton: HTMLButtonElement;
   algorithmSelect: HTMLSelectElement;
   densitySlider: HTMLInputElement;
+  recording?: {
+    algorithmName: HTMLElement;
+    stats: HTMLElement;
+    result: HTMLElement;
+  };
 }
 
 const cellId = (cell: Cell): string => `${cell.row}:${cell.col}`;
@@ -90,6 +95,18 @@ export const render = (
   elements.pathValue.textContent = state.pathLength > 0 ? String(state.pathLength) : "None";
   elements.targetValue.textContent = state.grid.targetId.replace(":", ", ");
   elements.algorithmValue.textContent = algorithmLabel;
+
+  if (elements.recording) {
+    elements.recording.algorithmName.textContent = algorithmLabel;
+    elements.recording.stats.textContent = `Visited ${state.visitedCount} · Frontier ${state.frontierCount} · Path ${state.pathLength || "—"}`;
+    elements.recording.result.textContent = state.missed
+      ? "No path found"
+      : state.pathLength > 0
+        ? `Path found in ${state.pathLength} steps`
+        : state.isRunning
+          ? "Searching…"
+          : "Ready to search";
+  }
 
   updateButtonStates(elements, state);
 };
