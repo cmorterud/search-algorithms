@@ -52,7 +52,7 @@ export class SearchSound {
     switch (event.type) {
       case "frontier":
       case "visit":
-        this.updateHum(100 + progress * 115 * pitch);
+        this.updateHum(165 + progress * 260 * pitch);
         break;
       case "path":
         this.fadeHum();
@@ -75,7 +75,7 @@ export class SearchSound {
     if (!this.humOscillator || !this.humGain) {
       this.humOscillator = this.context.createOscillator();
       this.humGain = this.context.createGain();
-      this.humOscillator.type = "triangle";
+      this.humOscillator.type = "sine";
       this.humGain.gain.setValueAtTime(0.0001, now);
       this.humOscillator.connect(this.humGain);
       this.humGain.connect(this.context.destination);
@@ -84,7 +84,7 @@ export class SearchSound {
     this.humOscillator.frequency.cancelScheduledValues(now);
     this.humOscillator.frequency.setTargetAtTime(frequency, now, 0.07);
     this.humGain.gain.cancelScheduledValues(now);
-    this.humGain.gain.setTargetAtTime(Math.max(.0001, this.volume * .23), now, 0.035);
+    this.humGain.gain.setTargetAtTime(Math.max(.0001, this.volume * .4), now, 0.035);
   }
 
   private fadeHum(): void {
