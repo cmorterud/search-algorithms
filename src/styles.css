@@ -415,7 +415,7 @@ h1 {
 }
 
 .search-recording-footer strong { display: none; }
-.recording-city-label { margin-top: .3rem; color: rgba(112, 169, 250, .8); font-size: clamp(2.1rem, 8.4vw, 4.7rem); font-weight: 300; letter-spacing: .06em; line-height: .88; text-transform: uppercase; }
+.recording-city-label { margin-top: .25rem; color: rgba(198, 218, 248, .58); font-size: clamp(.56rem, 1.65vw, .8rem); font-weight: 500; letter-spacing: .16em; line-height: 1; text-transform: uppercase; }
 
 .recording-panel {
   display: grid;
