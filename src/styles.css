@@ -347,10 +347,11 @@ h1 {
 
 .search-recording-title {
   margin: 0;
-  color: #74adff;
-  font-size: clamp(1.7rem, 5.4vw, 3rem);
-  line-height: 1.05;
-  text-wrap: balance;
+  color: rgba(198, 218, 248, .76);
+  font-size: clamp(.82rem, 2.35vw, 1.2rem);
+  font-weight: 500;
+  letter-spacing: .03em;
+  line-height: 1.1;
 }
 
 .search-recording-subtitle {
