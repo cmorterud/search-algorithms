@@ -4,6 +4,8 @@ export class SearchSound {
   private context: AudioContext | undefined;
   private enabled = true;
   private volume = 0.14;
+  private humOscillator: OscillatorNode | undefined;
+  private humGain: GainNode | undefined;
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
@@ -49,22 +51,47 @@ export class SearchSound {
     const pitch = 0.82 + Math.min(1, Math.max(0, progress)) * 0.78;
     switch (event.type) {
       case "frontier":
-        this.playTone(260 * pitch, "sine", 0.025, 0.35);
-        break;
       case "visit":
-        this.playTone(420 * pitch, "triangle", 0.035, 0.75);
+        this.updateHum(100 + progress * 115 * pitch);
         break;
       case "path":
+        this.fadeHum();
         event.ids.slice(0, 5).forEach((_, index) => {
-          this.playTone((520 + index * 48) * pitch, "sine", 0.065, 0.9, index * 0.035);
+          this.playTone((360 + index * 28) * pitch, "sine", 0.09, 0.48, index * 0.045);
         });
         break;
       case "miss":
+        this.fadeHum();
         this.playTone(170 * pitch, "sawtooth", 0.12, 0.55);
         break;
       case "clearHighlights":
         break;
     }
+  }
+
+  private updateHum(frequency: number): void {
+    if (!this.context) return;
+    const now = this.context.currentTime;
+    if (!this.humOscillator || !this.humGain) {
+      this.humOscillator = this.context.createOscillator();
+      this.humGain = this.context.createGain();
+      this.humOscillator.type = "triangle";
+      this.humGain.gain.setValueAtTime(0.0001, now);
+      this.humOscillator.connect(this.humGain);
+      this.humGain.connect(this.context.destination);
+      this.humOscillator.start();
+    }
+    this.humOscillator.frequency.cancelScheduledValues(now);
+    this.humOscillator.frequency.setTargetAtTime(frequency, now, 0.07);
+    this.humGain.gain.cancelScheduledValues(now);
+    this.humGain.gain.setTargetAtTime(Math.max(.0001, this.volume * .23), now, 0.035);
+  }
+
+  private fadeHum(): void {
+    if (!this.context || !this.humGain) return;
+    const now = this.context.currentTime;
+    this.humGain.gain.cancelScheduledValues(now);
+    this.humGain.gain.setTargetAtTime(.0001, now, .08);
   }
 
   private playTone(
