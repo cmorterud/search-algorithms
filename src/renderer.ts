@@ -24,10 +24,6 @@ interface RenderElements {
 const cellId = (cell: Cell): string => `${cell.row}:${cell.col}`;
 let renderedGrid: GridSnapshot | undefined;
 const tilesById = new Map<string, HTMLButtonElement>();
-let renderedFrontier = new Set<string>();
-let renderedVisited = new Set<string>();
-let renderedPath = new Set<string>();
-let renderedActiveId: string | undefined;
 
 const buildGrid = (container: HTMLElement, state: VisualizerState): void => {
   const fragment = document.createDocumentFragment();
@@ -48,16 +44,6 @@ const buildGrid = (container: HTMLElement, state: VisualizerState): void => {
   });
   container.replaceChildren(fragment);
   renderedGrid = state.grid;
-  renderedFrontier = new Set();
-  renderedVisited = new Set();
-  renderedPath = new Set();
-  renderedActiveId = undefined;
-};
-
-const syncClass = (className: string, previous: Set<string>, next: Set<string>): Set<string> => {
-  previous.forEach((id) => { if (!next.has(id)) tilesById.get(id)?.classList.remove(className); });
-  next.forEach((id) => { if (!previous.has(id)) tilesById.get(id)?.classList.add(className); });
-  return new Set(next);
 };
 
 const updateButtonStates = (
@@ -82,17 +68,19 @@ export const render = (
   elements: RenderElements,
   state: VisualizerState,
   algorithmLabel: string,
+  changedIds: ReadonlySet<string>,
 ): void => {
   elements.gridContainer.style.setProperty("--grid-cols", String(state.grid.cols));
-  if (renderedGrid !== state.grid) buildGrid(elements.gridContainer, state);
-  renderedFrontier = syncClass("frontier", renderedFrontier, state.frontierIds);
-  renderedVisited = syncClass("visited", renderedVisited, state.visitedIds);
-  renderedPath = syncClass("path", renderedPath, state.pathIds);
-  if (renderedActiveId !== state.activeId) {
-    if (renderedActiveId) tilesById.get(renderedActiveId)?.classList.remove("active");
-    if (state.activeId) tilesById.get(state.activeId)?.classList.add("active");
-    renderedActiveId = state.activeId;
-  }
+  const gridChanged = renderedGrid !== state.grid;
+  if (gridChanged) buildGrid(elements.gridContainer, state);
+  const idsToRender = gridChanged ? state.grid.cells.map(cellId) : changedIds;
+  idsToRender.forEach((id) => {
+    const tile = tilesById.get(id); if (!tile) return;
+    tile.classList.toggle("frontier", state.frontierIds.has(id));
+    tile.classList.toggle("visited", state.visitedIds.has(id));
+    tile.classList.toggle("path", state.pathIds.has(id));
+    tile.classList.toggle("active", state.activeId === id);
+  });
 
   elements.gridContainer.classList.toggle("missed", state.missed);
   elements.visitedValue.textContent = String(state.visitedCount);
