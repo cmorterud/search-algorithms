@@ -56,7 +56,7 @@ export class SearchSound {
     switch (event.type) {
       case "frontier":
       case "visit":
-        this.updateHum(165 + progress * 260 * pitch);
+        this.updateHum(145 + progress * 220 * pitch);
         break;
       case "path":
         this.fadeHum();
