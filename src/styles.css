@@ -343,6 +343,9 @@ h1 {
   gap: 1rem;
   padding: var(--safe-top) var(--safe-horizontal) 1%;
   text-align: left;
+  position: relative;
+  z-index: 2;
+  transform: translateY(3rem);
 }
 
 .recording-kicker {
