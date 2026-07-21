@@ -140,8 +140,10 @@ const createGridFromCityGraph = (city: CityGraph): GridSnapshot => {
   const seen = new Set<string>(); let largest: string[] = [];
   adjacent.forEach((_, seed) => { if (seen.has(seed)) return; const component: string[] = [], queue = [seed]; seen.add(seed); while (queue.length) { const current = queue.pop(); if (!current) continue; component.push(current); (adjacent.get(current) ?? []).forEach((neighbor) => { if (!seen.has(neighbor)) { seen.add(neighbor); queue.push(neighbor); } }); } if (component.length > largest.length) largest = component; });
   const connectedNodes = largest.map((id) => nodeById.get(id)).filter((node): node is { id: string; x: number; y: number } => Boolean(node));
-  const startNode = connectedNodes.reduce((best, node) => node.x < best.x ? node : best, connectedNodes[0]);
-  const targetNode = connectedNodes.reduce((best, node) => node.x > best.x ? node : best, connectedNodes[0]);
+  // Favor opposite, slightly inset corners while staying on one connected road component.
+  const distanceTo = (node: { x: number; y: number }, x: number, y: number) => (node.x - x) ** 2 + (node.y - y) ** 2;
+  const startNode = connectedNodes.reduce((best, node) => distanceTo(node, .18, .78) < distanceTo(best, .18, .78) ? node : best, connectedNodes[0]);
+  const targetNode = connectedNodes.reduce((best, node) => distanceTo(node, .82, .22) < distanceTo(best, .82, .22) ? node : best, connectedNodes[0]);
   const startPoint = pointFor(startNode), targetPoint = pointFor(targetNode); const startId = idFor(startPoint.row, startPoint.col), targetId = idFor(targetPoint.row, targetPoint.col);
   const cells = Array.from({ length: rows * cols }, (_, i) => { const row = Math.floor(i / cols), col = i % cols; return { row, col, kind: streets.has(idFor(row, col)) ? "empty" as const : "wall" as const }; });
   return { rows, cols, cells: applyEndpoints(cells, startId, targetId), startId, targetId };
