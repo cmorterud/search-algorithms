@@ -40,25 +40,27 @@ export class SearchSound {
     }
   }
 
-  playEvent(event: SearchEvent): void {
+  playEvent(event: SearchEvent, progress = 0): void {
     if (!this.enabled || !this.context || this.context.state !== "running") {
       return;
     }
 
+    // Search order is a useful, deliberately lightweight proxy for getting closer.
+    const pitch = 0.82 + Math.min(1, Math.max(0, progress)) * 0.78;
     switch (event.type) {
       case "frontier":
-        this.playTone(260, "sine", 0.025, 0.35);
+        this.playTone(260 * pitch, "sine", 0.025, 0.35);
         break;
       case "visit":
-        this.playTone(420, "triangle", 0.035, 0.75);
+        this.playTone(420 * pitch, "triangle", 0.035, 0.75);
         break;
       case "path":
         event.ids.slice(0, 5).forEach((_, index) => {
-          this.playTone(520 + index * 48, "sine", 0.065, 0.9, index * 0.035);
+          this.playTone((520 + index * 48) * pitch, "sine", 0.065, 0.9, index * 0.035);
         });
         break;
       case "miss":
-        this.playTone(170, "sawtooth", 0.12, 0.55);
+        this.playTone(170 * pitch, "sawtooth", 0.12, 0.55);
         break;
       case "clearHighlights":
         break;

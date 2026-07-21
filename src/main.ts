@@ -6,7 +6,8 @@ import type { Cell, GridSnapshot, SearchEvent, VisualizerState } from "./types";
 
 const DEFAULT_OPENINGS = 9;
 const STANDARD_SIZE = { rows: 41, cols: 73 };
-const PORTRAIT_SIZE = { rows: 31, cols: 17 };
+// Dense enough for real street geometry to read as fine road segments in portrait.
+const PORTRAIT_SIZE = { rows: 292, cols: 180 };
 const isRecording = /\/recording\/?$/.test(window.location.pathname);
 let gridSize = isRecording ? PORTRAIT_SIZE : STANDARD_SIZE;
 
@@ -33,27 +34,30 @@ if (isRecording) {
       <div class="search-recording-preview" id="recording-preview">
         <section class="search-recording-canvas" aria-label="Portrait recording canvas">
           <header class="search-recording-header">
-            <p class="recording-kicker" id="recording-algorithm-name">Breadth First Search</p>
-            <h1 class="search-recording-title" id="recording-title-display">How Search Finds a Path</h1>
-            <p class="search-recording-subtitle" id="recording-subtitle-display">Start to target through a random maze</p>
+            <div class="recording-heading">
+              <p class="recording-kicker" id="recording-algorithm-name">Search algorithm</p>
+              <h1 class="search-recording-title" id="recording-title-display">Search Algorithm</h1>
+              <p class="search-recording-subtitle" id="recording-subtitle-display">A live route search across an imagined city</p>
+            </div>
+            <div class="recording-metrics"><span id="recording-complexity">TC: O(V + E)</span><p id="recording-stats">Nodes: 0 &nbsp; Time: 0.0 ms</p></div>
           </header>
-          <div class="search-recording-summary"><span>Start</span><b>→</b><span>Target</span><span class="recording-countdown" id="recording-countdown" hidden></span></div>
-          <section class="visualizer recording-visualizer" aria-label="Search visualization"><div class="grid-container" id="grid-container"></div></section>
+          <div class="search-recording-summary"><span class="recording-countdown" id="recording-countdown" hidden></span></div>
+          <section class="visualizer recording-visualizer" aria-label="Search visualization"><canvas class="city-graph-canvas" id="city-graph-canvas" aria-hidden="true"></canvas><div class="grid-container" id="grid-container"></div></section>
           <footer class="search-recording-footer">
-            <p id="recording-stats">Visited 0 · Frontier 0 · Path —</p>
             <strong id="recording-result">Ready to search</strong>
+            <span class="recording-city-label" id="recording-city-label">LOADING CITY</span>
           </footer>
         </section>
       </div>
       <aside class="recording-panel" aria-label="Recording controls">
         <h2>Recording controls</h2>
-        <label class="control-field">Title<input id="recording-title" value="How Search Finds a Path" maxlength="72" /></label>
-        <label class="control-field">Subtitle<input id="recording-subtitle" value="Start to target through a random maze" maxlength="96" /></label>
+        <label class="control-field">Title<input id="recording-title" value="Search Algorithm" maxlength="72" /></label>
+        <label class="control-field">Subtitle<input id="recording-subtitle" value="A live route search across an imagined city" maxlength="96" /></label>
         <label class="recording-toggle"><input id="show-algorithm" type="checkbox" checked /> Show algorithm name</label>
         <label class="recording-toggle"><input id="show-stats" type="checkbox" checked /> Show statistics</label>
         <label class="recording-toggle"><input id="show-result" type="checkbox" checked /> Show result</label>
         <label class="recording-toggle"><input id="enable-countdown" type="checkbox" /> 3 second countdown</label>
-        <button id="portrait-preset" type="button">Portrait-safe grid (31 × 17)</button>
+        <button id="portrait-preset" type="button">Reload city layout</button>
         <button id="replay-button" type="button">Replay scenario</button>
         <button id="fullscreen-button" type="button">Fullscreen canvas</button>
         <button id="copy-url-button" type="button">Copy recording URL</button>
@@ -87,6 +91,7 @@ algorithms.forEach((algorithm) => { const option = document.createElement("optio
 
 const idFor = (row: number, col: number) => `${row}:${col}`;
 const parseId = (id: string) => { const [row, col] = id.split(":").map(Number); return { row, col }; };
+interface CityGraph { name: string; source: string; nodes: { id: string; x: number; y: number }[]; edges: { from: string; to: string; weight: number }[]; }
 const cloneGrid = (grid: GridSnapshot): GridSnapshot => ({ ...grid, cells: grid.cells.map((cell) => ({ ...cell })) });
 const shuffle = <T>(items: T[]) => { const result = [...items]; for (let i = result.length - 1; i > 0; i -= 1) { const j = Math.floor(Math.random() * (i + 1)); [result[i], result[j]] = [result[j], result[i]]; } return result; };
 const manhattanDistance = (a: string, b: string) => { const from = parseId(a); const to = parseId(b); return Math.abs(from.row - to.row) + Math.abs(from.col - to.col); };
@@ -99,17 +104,102 @@ const createMazeGrid = (openings: number): GridSnapshot => {
   const targetId = chooseTargetId([...open], startId); const cells: Cell[] = Array.from({ length: rows * cols }, (_, i) => { const row = Math.floor(i / cols); const col = i % cols; return { row, col, kind: open.has(idFor(row, col)) ? "empty" as const : "wall" as const }; }); return { rows, cols, cells: applyEndpoints(cells, startId, targetId), startId, targetId };
 };
 const createOpenGrid = (): GridSnapshot => { const { rows, cols } = gridSize; const startId = idFor(Math.floor(rows / 2), 1); const ids = Array.from({ length: rows * cols }, (_, i) => idFor(Math.floor(i / cols), i % cols)); const targetId = chooseTargetId(ids, startId); return { rows, cols, cells: applyEndpoints(ids.map((id) => { const { row, col } = parseId(id); return { row, col, kind: "empty" as const }; }), startId, targetId), startId, targetId }; };
+const createCityGrid = (): GridSnapshot => {
+  const { rows, cols } = gridSize;
+  const streets = new Set<string>();
+  const carve = (row: number, col: number, width = 0) => {
+    for (let r = row - width; r <= row + width; r += 1) for (let c = col - width; c <= col + width; c += 1) if (r > 0 && r < rows - 1 && c > 0 && c < cols - 1) streets.add(idFor(r, c));
+  };
+  const route = (from: [number, number], to: [number, number], width = 0) => {
+    let [row, col] = from; const [endRow, endCol] = to;
+    while (row !== endRow || col !== endCol) { carve(row, col, width); if (col !== endCol && (row === endRow || Math.random() < .62)) col += Math.sign(endCol - col); else if (row !== endRow) row += Math.sign(endRow - row); }
+    carve(endRow, endCol, width);
+  };
+  const hubs: [number, number][] = [[29, 3], [12, 8], [23, 12], [39, 12], [8, 18], [27, 19], [45, 20], [15, 27], [31, 29], [47, 28], [29, 32]];
+  [[0,1],[0,2],[1,4],[2,5],[3,6],[4,7],[5,8],[6,9],[7,10],[8,10],[9,2],[9,7],[2,10],[3,9],[4,6]].forEach(([a, b]) => route(hubs[a], hubs[b], (a === 0 || b === 10) ? 1 : 0));
+  hubs.slice(1, -1).forEach(([baseRow, baseCol], district) => {
+    const spread = 3 + (district % 3);
+    for (let offset = -spread; offset <= spread; offset += 2) { route([Math.max(2, baseRow - spread), Math.max(2, baseCol + offset)], [Math.min(rows - 3, baseRow + spread), Math.max(2, baseCol + offset)]); route([Math.max(2, baseRow + offset), Math.max(2, baseCol - spread)], [Math.max(2, baseRow + offset), Math.min(cols - 3, baseCol + spread)]); }
+  });
+  const startId = idFor(29, 3), targetId = idFor(29, 32);
+  const cells = Array.from({ length: rows * cols }, (_, i) => { const row = Math.floor(i / cols), col = i % cols; return { row, col, kind: streets.has(idFor(row, col)) ? "empty" as const : "wall" as const }; });
+  return { rows, cols, cells: applyEndpoints(cells, startId, targetId), startId, targetId };
+};
+const createGridFromCityGraph = (city: CityGraph): GridSnapshot => {
+  const { rows, cols } = gridSize;
+  const streets = new Set<string>();
+  const nodeById = new Map(city.nodes.map((node) => [node.id, node]));
+  const pointFor = (node: { x: number; y: number }) => ({ row: Math.round(1 + node.y * (rows - 3)), col: Math.round(1 + node.x * (cols - 3)) });
+  const carveLine = (from: { row: number; col: number }, to: { row: number; col: number }) => {
+    let { row, col } = from; const rowStep = Math.sign(to.row - row), colStep = Math.sign(to.col - col); const rowDistance = Math.abs(to.row - row), colDistance = Math.abs(to.col - col); let error = rowDistance - colDistance;
+    while (true) { streets.add(idFor(row, col)); if (row === to.row && col === to.col) break; const doubled = error * 2; if (doubled > -colDistance) { error -= colDistance; row += rowStep; } if (doubled < rowDistance) { error += rowDistance; col += colStep; } }
+  };
+  city.edges.forEach((edge) => { const from = nodeById.get(edge.from), to = nodeById.get(edge.to); if (from && to) carveLine(pointFor(from), pointFor(to)); });
+  const adjacent = new Map<string, string[]>();
+  city.edges.forEach(({ from, to }) => { adjacent.set(from, [...(adjacent.get(from) ?? []), to]); adjacent.set(to, [...(adjacent.get(to) ?? []), from]); });
+  const seen = new Set<string>(); let largest: string[] = [];
+  adjacent.forEach((_, seed) => { if (seen.has(seed)) return; const component: string[] = [], queue = [seed]; seen.add(seed); while (queue.length) { const current = queue.pop(); if (!current) continue; component.push(current); (adjacent.get(current) ?? []).forEach((neighbor) => { if (!seen.has(neighbor)) { seen.add(neighbor); queue.push(neighbor); } }); } if (component.length > largest.length) largest = component; });
+  const connectedNodes = largest.map((id) => nodeById.get(id)).filter((node): node is { id: string; x: number; y: number } => Boolean(node));
+  const startNode = connectedNodes.reduce((best, node) => node.x < best.x ? node : best, connectedNodes[0]);
+  const targetNode = connectedNodes.reduce((best, node) => node.x > best.x ? node : best, connectedNodes[0]);
+  const startPoint = pointFor(startNode), targetPoint = pointFor(targetNode); const startId = idFor(startPoint.row, startPoint.col), targetId = idFor(targetPoint.row, targetPoint.col);
+  const cells = Array.from({ length: rows * cols }, (_, i) => { const row = Math.floor(i / cols), col = i % cols; return { row, col, kind: streets.has(idFor(row, col)) ? "empty" as const : "wall" as const }; });
+  return { rows, cols, cells: applyEndpoints(cells, startId, targetId), startId, targetId };
+};
 const createState = (grid: GridSnapshot): VisualizerState => ({ grid: cloneGrid(grid), originalGrid: cloneGrid(grid), events: [], currentEventIndex: 0, isRunning: false, isPaused: false, visitedCount: 0, frontierCount: 0, pathLength: 0, activeId: undefined, visitedIds: new Set(), frontierIds: new Set(), pathIds: new Set(), missed: false });
-let state = createState(createMazeGrid(DEFAULT_OPENINGS)); let playbackTimer: number | undefined; let countdownTimer: number | undefined; const sound = new SearchSound(); sound.setVolume(Number(elements.volumeSlider.value) / 100);
+let loadedCity: CityGraph | undefined;
+let state = createState(isRecording ? createCityGrid() : createMazeGrid(DEFAULT_OPENINGS)); let playbackTimer: number | undefined; let countdownTimer: number | undefined; const sound = new SearchSound(); sound.setVolume(Number(elements.volumeSlider.value) / 100);
+const drawCityGraph = () => {
+  const canvas = optionalElement<HTMLCanvasElement>("#city-graph-canvas"); if (!canvas || !loadedCity) return;
+  const bounds = canvas.getBoundingClientRect(), pixelRatio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(bounds.width * pixelRatio); canvas.height = Math.round(bounds.height * pixelRatio);
+  const context = canvas.getContext("2d"); if (!context) return;
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0); context.clearRect(0, 0, bounds.width, bounds.height);
+  const nodes = new Map(loadedCity.nodes.map((node) => [node.id, node]));
+  context.beginPath();
+  loadedCity.edges.forEach((edge) => { const from = nodes.get(edge.from), to = nodes.get(edge.to); if (!from || !to) return; context.moveTo(from.x * bounds.width, from.y * bounds.height); context.lineTo(to.x * bounds.width, to.y * bounds.height); });
+  context.strokeStyle = "rgba(67, 116, 194, .58)"; context.lineWidth = .7; context.stroke();
+};
+if (isRecording) {
+  const canvas = optionalElement<HTMLCanvasElement>("#city-graph-canvas");
+  if (canvas) new ResizeObserver(() => drawCityGraph()).observe(canvas);
+}
 const selectedAlgorithm = () => algorithms.find((candidate) => candidate.id === elements.algorithmSelect.value) ?? algorithms[0];
-const renderCurrentState = () => render(elements, state, selectedAlgorithm().label);
+const complexityFor = (algorithmId: string) => ({ bfs: "TC: O(V + E)", dfs: "TC: O(V + E)", dijkstra: "TC: O((V + E) log V)", astar: "TC: O((V + E) log V)" }[algorithmId] ?? "TC: —");
+const renderCurrentState = () => { render(elements, state, selectedAlgorithm().label); const complexity = optionalElement<HTMLElement>("#recording-complexity"); if (complexity) complexity.textContent = complexityFor(elements.algorithmSelect.value); };
+const loadRecordingCity = async () => {
+  const requested = new URLSearchParams(window.location.search).get("city") ?? "ann-arbor";
+  if (!/^[a-z0-9-]+$/i.test(requested)) return;
+  try {
+    const asset = `cities/${requested}.json`;
+    const sources = [
+      new URL(asset, new URL(import.meta.env.BASE_URL, window.location.origin)).toString(),
+      new URL(asset, window.location.href).toString(),
+      new URL(`/cities/${requested}.json`, window.location.origin).toString(),
+      new URL(`/search-algorithms/cities/${requested}.json`, window.location.origin).toString(),
+    ];
+    let city: CityGraph | undefined;
+    for (const source of [...new Set(sources)]) {
+      try { const response = await fetch(source); if (response.ok) { city = await response.json() as CityGraph; break; } } catch { /* Try the next valid app base path. */ }
+    }
+    if (!city) throw new Error("City graph was not found");
+    loadedCity = city;
+    state = createState(createGridFromCityGraph(city));
+    const label = optionalElement<HTMLElement>("#recording-city-label"); if (label) label.textContent = city.name.split(",")[0].toUpperCase();
+    window.requestAnimationFrame(drawCityGraph);
+    renderCurrentState();
+  } catch (error) {
+    const label = optionalElement<HTMLElement>("#recording-city-label"); if (label) label.textContent = "CITY DATA UNAVAILABLE";
+    console.warn("Using the generated city fallback.", error);
+  }
+};
 const clearPlaybackTimer = () => { if (playbackTimer !== undefined) { window.cancelAnimationFrame(playbackTimer); playbackTimer = undefined; } };
-const applyEvent = (event: SearchEvent, audible = true) => { state.activeId = undefined; if (audible) sound.playEvent(event); if (event.type === "frontier" && !state.visitedIds.has(event.id) && !state.frontierIds.has(event.id)) { state.frontierIds.add(event.id); state.frontierCount += 1; } else if (event.type === "visit") { state.activeId = event.id; state.frontierIds.delete(event.id); if (!state.visitedIds.has(event.id)) { state.visitedIds.add(event.id); state.visitedCount += 1; } } else if (event.type === "path") { state.pathIds = new Set(event.ids); state.pathLength = event.ids.length; } else if (event.type === "miss") { state.missed = true; state.pathLength = 0; } };
+const applyEvent = (event: SearchEvent, audible = true) => { state.activeId = undefined; if (audible) sound.playEvent(event, state.currentEventIndex / Math.max(1, state.events.length - 1)); if (event.type === "frontier" && !state.visitedIds.has(event.id) && !state.frontierIds.has(event.id)) { state.frontierIds.add(event.id); state.frontierCount += 1; } else if (event.type === "visit") { state.activeId = event.id; state.frontierIds.delete(event.id); if (!state.visitedIds.has(event.id)) { state.visitedIds.add(event.id); state.visitedCount += 1; } } else if (event.type === "path") { state.pathIds = new Set(event.ids); state.pathLength = event.ids.length; } else if (event.type === "miss") { state.missed = true; state.pathLength = 0; } };
 const finishRun = () => { state.isRunning = false; state.isPaused = false; state.activeId = undefined; renderCurrentState(); };
-const playNextEvent = () => { clearPlaybackTimer(); if (!state.isRunning || state.isPaused) return renderCurrentState(); const speed = Number(elements.speedSlider.value) / 100; const batch = Math.max(1, Math.round(1 + speed * speed * 90)); for (let i = 0; i < batch; i += 1) { const event = state.events[state.currentEventIndex]; if (!event) return finishRun(); applyEvent(event, i === batch - 1); state.currentEventIndex += 1; } renderCurrentState(); playbackTimer = window.requestAnimationFrame(playNextEvent); };
+const playNextEvent = () => { clearPlaybackTimer(); if (!state.isRunning || state.isPaused) return renderCurrentState(); const speed = Number(elements.speedSlider.value) / 100; const batch = Math.max(1, Math.round(2 * (1 + speed * speed * 90))); for (let i = 0; i < batch; i += 1) { const event = state.events[state.currentEventIndex]; if (!event) return finishRun(); applyEvent(event, i === batch - 1); state.currentEventIndex += 1; } renderCurrentState(); playbackTimer = window.requestAnimationFrame(playNextEvent); };
 const beginRun = () => { void sound.unlock(); const algorithm = selectedAlgorithm(); state.events = algorithm.search(cloneGrid(state.grid)); state.originalGrid = cloneGrid(state.grid); state.currentEventIndex = 0; state.isRunning = true; state.isPaused = false; state.visitedCount = 0; state.frontierCount = 0; state.pathLength = 0; state.activeId = undefined; state.visitedIds.clear(); state.frontierIds.clear(); state.pathIds.clear(); state.missed = false; renderCurrentState(); playNextEvent(); };
 const resetRun = () => { clearPlaybackTimer(); state = createState(state.originalGrid); renderCurrentState(); };
-const randomize = () => { clearPlaybackTimer(); state = createState(createMazeGrid(Number(elements.densitySlider.value))); renderCurrentState(); };
+const randomize = () => { clearPlaybackTimer(); state = createState(isRecording ? (loadedCity ? createGridFromCityGraph(loadedCity) : createCityGrid()) : createMazeGrid(Number(elements.densitySlider.value))); renderCurrentState(); };
 const clearGrid = () => { clearPlaybackTimer(); state = createState(createOpenGrid()); renderCurrentState(); };
 const cycleCellKind = (id: string) => { if (state.isRunning) return; const grid = cloneGrid(state.grid); const cell = grid.cells.find((candidate) => idFor(candidate.row, candidate.col) === id); if (!cell || cell.kind === "start" || cell.kind === "target") return; cell.kind = cell.kind === "empty" ? "wall" : "empty"; state = createState(grid); renderCurrentState(); };
 elements.startButton.addEventListener("click", beginRun); elements.pauseButton.addEventListener("click", () => { if (!state.isRunning) return; state.isPaused = !state.isPaused; renderCurrentState(); if (!state.isPaused) playNextEvent(); }); elements.resetButton.addEventListener("click", resetRun); elements.randomizeButton.addEventListener("click", randomize); elements.clearButton.addEventListener("click", clearGrid); elements.algorithmSelect.addEventListener("change", renderCurrentState); elements.densitySlider.addEventListener("input", randomize); elements.gridContainer.addEventListener("click", (event) => { const target = event.target; if (target instanceof HTMLElement && target.dataset.id) cycleCellKind(target.dataset.id); }); elements.soundButton.addEventListener("click", () => { const enabled = !sound.isEnabled(); sound.setEnabled(enabled); elements.soundButton.textContent = enabled ? "Sound On" : "Sound Off"; elements.soundButton.setAttribute("aria-pressed", String(enabled)); if (enabled) void sound.unlock(); }); elements.volumeSlider.addEventListener("input", () => sound.setVolume(Number(elements.volumeSlider.value) / 100));
@@ -120,3 +210,4 @@ if (isRecording) {
   elements.startButton.addEventListener("click", (event) => { if (!countdown.checked || state.isRunning) return; event.stopImmediatePropagation(); if (countdownTimer) window.clearInterval(countdownTimer); let seconds = 3; countdownDisplay.hidden = false; countdownDisplay.textContent = String(seconds); countdownTimer = window.setInterval(() => { seconds -= 1; countdownDisplay.textContent = seconds ? String(seconds) : "Go"; if (seconds < 0) { window.clearInterval(countdownTimer); countdownDisplay.hidden = true; beginRun(); } }, 1000); }, { capture: true });
 }
 renderCurrentState();
+if (isRecording) void loadRecordingCity();

@@ -1,4 +1,4 @@
-import type { Cell, VisualizerState } from "./types";
+import type { Cell, GridSnapshot, VisualizerState } from "./types";
 
 interface RenderElements {
   gridContainer: HTMLElement;
@@ -22,6 +22,29 @@ interface RenderElements {
 }
 
 const cellId = (cell: Cell): string => `${cell.row}:${cell.col}`;
+let renderedGrid: GridSnapshot | undefined;
+const tilesById = new Map<string, HTMLButtonElement>();
+
+const buildGrid = (container: HTMLElement, state: VisualizerState): void => {
+  const fragment = document.createDocumentFragment();
+  tilesById.clear();
+  state.grid.cells.forEach((cell) => {
+    const id = cellId(cell);
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = "cell";
+    tile.dataset.id = id;
+    tile.dataset.kind = cell.kind;
+    tile.setAttribute("aria-label", `${cell.kind} location row ${cell.row + 1}, column ${cell.col + 1}`);
+    tile.title = cell.kind;
+    if (cell.kind === "start") tile.textContent = "S";
+    if (cell.kind === "target") tile.textContent = "T";
+    tilesById.set(id, tile);
+    fragment.append(tile);
+  });
+  container.replaceChildren(fragment);
+  renderedGrid = state.grid;
+};
 
 const updateButtonStates = (
   elements: RenderElements,
@@ -47,47 +70,14 @@ export const render = (
   algorithmLabel: string,
 ): void => {
   elements.gridContainer.style.setProperty("--grid-cols", String(state.grid.cols));
-  elements.gridContainer.replaceChildren(
-    ...state.grid.cells.map((cell) => {
-      const id = cellId(cell);
-      const tile = document.createElement("button");
-      tile.type = "button";
-      tile.className = "cell";
-      tile.dataset.id = id;
-      tile.dataset.kind = cell.kind;
-      tile.setAttribute(
-        "aria-label",
-        `${cell.kind} location row ${cell.row + 1}, column ${cell.col + 1}`,
-      );
-      tile.title = cell.kind;
-
-      if (state.frontierIds.has(id)) {
-        tile.classList.add("frontier");
-      }
-
-      if (state.visitedIds.has(id)) {
-        tile.classList.add("visited");
-      }
-
-      if (state.pathIds.has(id)) {
-        tile.classList.add("path");
-      }
-
-      if (state.activeId === id) {
-        tile.classList.add("active");
-      }
-
-      if (cell.kind === "start") {
-        tile.textContent = "S";
-      }
-
-      if (cell.kind === "target") {
-        tile.textContent = "T";
-      }
-
-      return tile;
-    }),
-  );
+  if (renderedGrid !== state.grid) buildGrid(elements.gridContainer, state);
+  state.grid.cells.forEach((cell) => {
+    const id = cellId(cell); const tile = tilesById.get(id); if (!tile) return;
+    tile.classList.toggle("frontier", state.frontierIds.has(id));
+    tile.classList.toggle("visited", state.visitedIds.has(id));
+    tile.classList.toggle("path", state.pathIds.has(id));
+    tile.classList.toggle("active", state.activeId === id);
+  });
 
   elements.gridContainer.classList.toggle("missed", state.missed);
   elements.visitedValue.textContent = String(state.visitedCount);
@@ -98,7 +88,7 @@ export const render = (
 
   if (elements.recording) {
     elements.recording.algorithmName.textContent = algorithmLabel;
-    elements.recording.stats.textContent = `Visited ${state.visitedCount} · Frontier ${state.frontierCount} · Path ${state.pathLength || "—"}`;
+    elements.recording.stats.textContent = `Nodes: ${state.visitedCount.toLocaleString()}   Time: ${(state.currentEventIndex / 120).toFixed(1)} ms`;
     elements.recording.result.textContent = state.missed
       ? "No path found"
       : state.pathLength > 0
