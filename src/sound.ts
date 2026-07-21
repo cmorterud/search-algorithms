@@ -60,9 +60,7 @@ export class SearchSound {
         break;
       case "path":
         this.fadeHum();
-        event.ids.slice(0, 5).forEach((_, index) => {
-          this.playTone((360 + index * 28) * pitch, "sine", 0.09, 0.48, index * 0.045);
-        });
+        this.playSuccessChime(pitch);
         break;
       case "miss":
         this.fadeHum();
@@ -96,6 +94,12 @@ export class SearchSound {
     const now = this.context.currentTime;
     this.humGain.gain.cancelScheduledValues(now);
     this.humGain.gain.setTargetAtTime(.0001, now, .08);
+  }
+
+  private playSuccessChime(pitch: number): void {
+    [392, 494, 587].forEach((frequency, index) => {
+      this.playTone(frequency * Math.min(1.18, pitch), "sine", 0.14, 0.48, index * 0.065);
+    });
   }
 
   private playTone(
