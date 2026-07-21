@@ -310,12 +310,17 @@ h1 {
 }
 
 .search-recording-preview {
+  position: relative;
   width: min(540px, calc((100vh - 32px) * 9 / 16));
   aspect-ratio: 9 / 16;
   margin-inline: auto;
   box-shadow: 0 24px 70px rgba(0, 0, 0, .55);
   background: #020407;
 }
+
+.recording-guides { position: absolute; inset: 7% 4% 11%; z-index: 5; border: 1px dashed rgba(137, 184, 255, .38); pointer-events: none; }
+.recording-guides span { position: absolute; top: -1.45rem; right: 0; color: rgba(184, 211, 249, .65); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .55rem; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+.guides-hidden .recording-guides { display: none; }
 
 .search-recording-canvas {
   --safe-top: 7%;
