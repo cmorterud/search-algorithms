@@ -23,15 +23,16 @@ interface RenderElements {
 
 const cellId = (cell: Cell): string => `${cell.row}:${cell.col}`;
 let renderedGrid: GridSnapshot | undefined;
-const tilesById = new Map<string, HTMLButtonElement>();
+const tilesById = new Map<string, HTMLElement>();
 
 const buildGrid = (container: HTMLElement, state: VisualizerState): void => {
   const fragment = document.createDocumentFragment();
+  const isRecordingGrid = Boolean(container.closest(".recording-visualizer"));
   tilesById.clear();
   state.grid.cells.forEach((cell) => {
     const id = cellId(cell);
-    const tile = document.createElement("button");
-    tile.type = "button";
+    const tile = document.createElement(isRecordingGrid ? "span" : "button");
+    if (tile instanceof HTMLButtonElement) tile.type = "button";
     tile.className = "cell";
     tile.dataset.id = id;
     tile.dataset.kind = cell.kind;

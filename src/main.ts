@@ -8,8 +8,10 @@ const DEFAULT_OPENINGS = 9;
 const STANDARD_SIZE = { rows: 41, cols: 73 };
 // Dense enough for real street geometry to read as fine road segments in portrait.
 const PORTRAIT_SIZE = { rows: 292, cols: 180 };
+const MOBILE_PORTRAIT_SIZE = { rows: 146, cols: 90 };
 const isRecording = /\/recording\/?$/.test(window.location.pathname);
-let gridSize = isRecording ? PORTRAIT_SIZE : STANDARD_SIZE;
+const recordingGridSize = () => window.matchMedia("(max-width: 700px)").matches ? MOBILE_PORTRAIT_SIZE : PORTRAIT_SIZE;
+let gridSize = isRecording ? recordingGridSize() : STANDARD_SIZE;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("App root was not found.");
@@ -216,7 +218,7 @@ elements.startButton.addEventListener("click", beginRun); elements.pauseButton.a
 if (isRecording) {
   const title = getElement<HTMLInputElement>("#recording-title"), subtitle = getElement<HTMLInputElement>("#recording-subtitle"), titleDisplay = getElement<HTMLElement>("#recording-title-display"), subtitleDisplay = getElement<HTMLElement>("#recording-subtitle-display"), algorithm = getElement<HTMLInputElement>("#show-algorithm"), stats = getElement<HTMLInputElement>("#show-stats"), result = getElement<HTMLInputElement>("#show-result"), countdown = getElement<HTMLInputElement>("#enable-countdown"), countdownDisplay = getElement<HTMLElement>("#recording-countdown");
   title.addEventListener("input", () => titleDisplay.textContent = title.value || "How Search Finds a Path"); subtitle.addEventListener("input", () => subtitleDisplay.textContent = subtitle.value); algorithm.addEventListener("change", () => elements.recording?.algorithmName.toggleAttribute("hidden", !algorithm.checked)); stats.addEventListener("change", () => elements.recording?.stats.toggleAttribute("hidden", !stats.checked)); result.addEventListener("change", () => elements.recording?.result.toggleAttribute("hidden", !result.checked));
-  getElement<HTMLButtonElement>("#portrait-preset").addEventListener("click", () => { gridSize = PORTRAIT_SIZE; randomize(); }); getElement<HTMLButtonElement>("#replay-button").addEventListener("click", () => { resetRun(); beginRun(); }); getElement<HTMLButtonElement>("#fullscreen-button").addEventListener("click", () => void getElement<HTMLElement>("#recording-preview").requestFullscreen?.()); getElement<HTMLButtonElement>("#copy-url-button").addEventListener("click", async (event) => { await navigator.clipboard?.writeText(window.location.href); (event.currentTarget as HTMLButtonElement).textContent = "Recording URL copied"; });
+  getElement<HTMLButtonElement>("#portrait-preset").addEventListener("click", () => { gridSize = recordingGridSize(); randomize(); }); getElement<HTMLButtonElement>("#replay-button").addEventListener("click", () => { resetRun(); beginRun(); }); getElement<HTMLButtonElement>("#fullscreen-button").addEventListener("click", () => void getElement<HTMLElement>("#recording-preview").requestFullscreen?.()); getElement<HTMLButtonElement>("#copy-url-button").addEventListener("click", async (event) => { await navigator.clipboard?.writeText(window.location.href); (event.currentTarget as HTMLButtonElement).textContent = "Recording URL copied"; });
   elements.startButton.addEventListener("click", (event) => { if (!countdown.checked || state.isRunning || preparingSearch) return; event.stopImmediatePropagation(); if (countdownTimer) window.clearInterval(countdownTimer); let seconds = 3; countdownDisplay.hidden = false; countdownDisplay.textContent = String(seconds); countdownTimer = window.setInterval(() => { seconds -= 1; countdownDisplay.textContent = seconds ? String(seconds) : "Go"; if (seconds < 0) { window.clearInterval(countdownTimer); countdownDisplay.hidden = true; beginRun(); } }, 1000); }, { capture: true });
 }
 renderCurrentState();
