@@ -15,6 +15,10 @@ export class SearchSound {
     return this.enabled;
   }
 
+  stopHum(): void {
+    this.fadeHum();
+  }
+
   setVolume(volume: number): void {
     this.volume = Math.min(0.16, Math.max(0, volume) * 0.16);
   }
