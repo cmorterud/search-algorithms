@@ -5,7 +5,7 @@ import { SearchSound } from "./sound";
 import type { Cell, GridSnapshot, SearchEvent, VisualizerState } from "./types";
 
 const DEFAULT_OPENINGS = 9;
-const STANDARD_SIZE = { rows: 41, cols: 73 };
+const STANDARD_SIZE = { rows: 81, cols: 145 };
 // Dense enough for real street geometry to read as fine road segments in portrait.
 const PORTRAIT_SIZE = { rows: 292, cols: 180 };
 const isRecording = /\/recording\/?$/.test(window.location.pathname);

@@ -96,7 +96,7 @@ h1 {
 }
 
 .grid-container {
-  --grid-cols: 73;
+  --grid-cols: 145;
   display: grid;
   width: 100%;
   min-height: 320px;
