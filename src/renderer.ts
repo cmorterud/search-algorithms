@@ -70,23 +70,58 @@ const renderRecordingOverlay = (
   context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   const cellWidth = bounds.width / state.grid.cols;
   const cellHeight = bounds.height / state.grid.rows;
-  const drawCell = (id: string) => {
+  const centerFor = (id: string) => {
     const [row, col] = id.split(":").map(Number);
-    const x = col * cellWidth, y = row * cellHeight;
-    context.clearRect(x, y, cellWidth + .5, cellHeight + .5);
-    const color = state.pathIds.has(id) ? "#e7f6ff" : state.activeId === id ? "#38baff" : state.visitedIds.has(id) ? "#38baff" : state.frontierIds.has(id) ? "#268cff" : undefined;
-    if (color) { context.fillStyle = color; context.fillRect(x, y, cellWidth + .25, cellHeight + .25); }
+    return { row, col, x: (col + .5) * cellWidth, y: (row + .5) * cellHeight };
+  };
+  const drawStrokes = (
+    ids: Iterable<string>,
+    color: string,
+    connectsTo: (id: string) => boolean,
+    widthScale = 1,
+  ) => {
+    const lineWidth = Math.max(.8, Math.min(cellWidth, cellHeight) * widthScale);
+    const dotRadius = Math.max(.08, lineWidth * .08);
+    context.beginPath();
+    for (const id of ids) {
+      const { row, col, x, y } = centerFor(id);
+      // A tiny round-capped segment makes isolated frontier cells smooth dots.
+      context.moveTo(x - dotRadius, y); context.lineTo(x + dotRadius, y);
+      [[row - 1, col], [row, col + 1], [row + 1, col], [row, col - 1]].forEach(([neighborRow, neighborCol]) => {
+        const neighborId = `${neighborRow}:${neighborCol}`;
+        if (!connectsTo(neighborId)) return;
+        context.moveTo(x, y);
+        context.lineTo((neighborCol + .5) * cellWidth, (neighborRow + .5) * cellHeight);
+      });
+    }
+    context.strokeStyle = color;
+    context.lineWidth = lineWidth;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.stroke();
   };
   const drawEndpoint = (id: string, color: string) => {
-    const [row, col] = id.split(":").map(Number);
+    const { x, y } = centerFor(id);
     const radius = Math.max(3, Math.min(cellWidth, cellHeight) * 1.8);
-    context.beginPath(); context.arc((col + .5) * cellWidth, (row + .5) * cellHeight, radius, 0, Math.PI * 2);
+    context.beginPath(); context.arc(x, y, radius, 0, Math.PI * 2);
     context.fillStyle = color; context.shadowColor = color; context.shadowBlur = radius * 2; context.fill(); context.shadowBlur = 0;
+  };
+  const isSearched = (id: string) => state.visitedIds.has(id) || state.frontierIds.has(id);
+  const drawSearchState = (ids: Iterable<string>) => {
+    const frontier: string[] = [], visited: string[] = [], path: string[] = [];
+    for (const id of ids) {
+      if (state.pathIds.has(id)) path.push(id);
+      else if (state.visitedIds.has(id)) visited.push(id);
+      else if (state.frontierIds.has(id)) frontier.push(id);
+    }
+    drawStrokes(frontier, "rgba(38, 140, 255, .88)", isSearched);
+    drawStrokes(visited, "rgba(56, 186, 255, .94)", isSearched);
+    drawStrokes(path, "#e7f6ff", (id) => state.pathIds.has(id), 1.35);
   };
   if (gridChanged || resized) {
     context.clearRect(0, 0, bounds.width, bounds.height);
-    state.visitedIds.forEach(drawCell); state.frontierIds.forEach(drawCell); state.pathIds.forEach(drawCell);
-  } else changedIds.forEach(drawCell);
+    drawSearchState(new Set([...state.frontierIds, ...state.visitedIds, ...state.pathIds]));
+  } else drawSearchState(changedIds);
   // Keep the endpoint beacons visible even when the final path passes through them.
   drawEndpoint(state.grid.startId, "#fa543f");
   drawEndpoint(state.grid.targetId, "#24f28d");
