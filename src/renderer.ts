@@ -21,9 +21,68 @@ interface RenderElements {
   };
 }
 
+interface RecordingRoadGraph {
+  nodes: { id: string; x: number; y: number }[];
+  edges: { from: string; to: string }[];
+}
+
+interface RecordingRoadIndex {
+  rows: number;
+  cols: number;
+  segments: { fromX: number; fromY: number; toX: number; toY: number }[];
+  segmentIdsByCell: Map<string, number[]>;
+}
+
 const cellId = (cell: Cell): string => `${cell.row}:${cell.col}`;
 let renderedGrid: GridSnapshot | undefined;
 const tilesById = new Map<string, HTMLElement>();
+let recordingRoadGraph: RecordingRoadGraph | undefined;
+let recordingRoadIndex: RecordingRoadIndex | undefined;
+
+export const setRecordingRoadGraph = (graph: RecordingRoadGraph | undefined): void => {
+  recordingRoadGraph = graph;
+  recordingRoadIndex = undefined;
+};
+
+const roadIndexFor = (grid: GridSnapshot): RecordingRoadIndex | undefined => {
+  if (!recordingRoadGraph) return undefined;
+  if (recordingRoadIndex?.rows === grid.rows && recordingRoadIndex.cols === grid.cols) return recordingRoadIndex;
+  const nodeById = new Map(recordingRoadGraph.nodes.map((node) => [node.id, node]));
+  const segments: RecordingRoadIndex["segments"] = [];
+  const segmentIdsByCell = new Map<string, number[]>();
+  const pointFor = (node: { x: number; y: number }) => ({
+    row: Math.round(1 + node.y * (grid.rows - 3)),
+    col: Math.round(1 + node.x * (grid.cols - 3)),
+  });
+  const indexCell = (id: string, segmentId: number) => {
+    const existing = segmentIdsByCell.get(id);
+    if (existing) existing.push(segmentId);
+    else segmentIdsByCell.set(id, [segmentId]);
+  };
+  recordingRoadGraph.edges.forEach((edge) => {
+    const fromNode = nodeById.get(edge.from), toNode = nodeById.get(edge.to);
+    if (!fromNode || !toNode) return;
+    const segmentId = segments.length;
+    segments.push({ fromX: fromNode.x, fromY: fromNode.y, toX: toNode.x, toY: toNode.y });
+    const from = pointFor(fromNode), to = pointFor(toNode);
+    let row = from.row, col = from.col;
+    const rowStep = Math.sign(to.row - row), colStep = Math.sign(to.col - col);
+    const rowDistance = Math.abs(to.row - row), colDistance = Math.abs(to.col - col);
+    let error = rowDistance - colDistance;
+    const indexedCells = new Set<string>();
+    const addCurrentCell = () => indexedCells.add(`${row}:${col}`);
+    while (true) {
+      addCurrentCell();
+      if (row === to.row && col === to.col) break;
+      const doubled = error * 2;
+      if (doubled > -colDistance) { error -= colDistance; row += rowStep; addCurrentCell(); }
+      if (doubled < rowDistance) { error += rowDistance; col += colStep; addCurrentCell(); }
+    }
+    indexedCells.forEach((id) => indexCell(id, segmentId));
+  });
+  recordingRoadIndex = { rows: grid.rows, cols: grid.cols, segments, segmentIdsByCell };
+  return recordingRoadIndex;
+};
 
 const buildGrid = (container: HTMLElement, state: VisualizerState): void => {
   const isRecordingGrid = Boolean(container.closest(".recording-visualizer"));
@@ -80,7 +139,9 @@ const renderRecordingOverlay = (
     connectsTo: (id: string) => boolean,
     widthScale = 1,
   ) => {
-    const lineWidth = Math.max(.8, Math.min(cellWidth, cellHeight) * widthScale);
+    // Keep the explored network close to the source-map road weight. A
+    // full-cell stroke causes neighboring streets to merge into solid blocks.
+    const lineWidth = Math.max(.5, Math.min(cellWidth, cellHeight) * .38 * widthScale);
     const dotRadius = Math.max(.08, lineWidth * .08);
     context.beginPath();
     for (const id of ids) {
@@ -100,6 +161,24 @@ const renderRecordingOverlay = (
     context.lineJoin = "round";
     context.stroke();
   };
+  const roadIndex = roadIndexFor(state.grid);
+  const drawRoadSegments = (ids: Iterable<string>, color: string, lineWidth: number) => {
+    if (!roadIndex) return false;
+    const segmentIds = new Set<number>();
+    for (const id of ids) roadIndex.segmentIdsByCell.get(id)?.forEach((segmentId) => segmentIds.add(segmentId));
+    context.beginPath();
+    segmentIds.forEach((segmentId) => {
+      const segment = roadIndex.segments[segmentId];
+      context.moveTo(segment.fromX * bounds.width, segment.fromY * bounds.height);
+      context.lineTo(segment.toX * bounds.width, segment.toY * bounds.height);
+    });
+    context.strokeStyle = color;
+    context.lineWidth = lineWidth;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.stroke();
+    return true;
+  };
   const drawEndpoint = (id: string, color: string) => {
     const { x, y } = centerFor(id);
     const radius = Math.max(3, Math.min(cellWidth, cellHeight) * 1.8);
@@ -114,9 +193,9 @@ const renderRecordingOverlay = (
       else if (state.visitedIds.has(id)) visited.push(id);
       else if (state.frontierIds.has(id)) frontier.push(id);
     }
-    drawStrokes(frontier, "rgba(38, 140, 255, .88)", isSearched);
-    drawStrokes(visited, "rgba(56, 186, 255, .94)", isSearched);
-    drawStrokes(path, "#e7f6ff", (id) => state.pathIds.has(id), 1.35);
+    if (!drawRoadSegments(frontier, "rgba(38, 140, 255, .88)", .7)) drawStrokes(frontier, "rgba(38, 140, 255, .88)", isSearched);
+    if (!drawRoadSegments(visited, "rgba(56, 186, 255, .94)", .85)) drawStrokes(visited, "rgba(56, 186, 255, .94)", isSearched);
+    drawStrokes(path, "#e7f6ff", (id) => state.pathIds.has(id), 2.2);
   };
   if (gridChanged || resized) {
     context.clearRect(0, 0, bounds.width, bounds.height);

@@ -1,6 +1,6 @@
 import "./styles.css";
 import { algorithms } from "./algorithms";
-import { render } from "./renderer";
+import { render, setRecordingRoadGraph } from "./renderer";
 import { SearchSound } from "./sound";
 import type { Cell, GridSnapshot, SearchEvent, VisualizerState } from "./types";
 
@@ -200,14 +200,15 @@ const loadRecordingCity = async (requested = new URLSearchParams(window.location
   if (citySelect) { citySelect.value = cityId; citySelect.disabled = true; }
   const label = optionalElement<HTMLElement>("#recording-city-label");
   if (label) label.textContent = `LOADING ${RECORDING_CITIES.find((city) => city.id === cityId)?.label.toUpperCase() ?? "CITY"}`;
+  setRecordingRoadGraph(undefined);
   cancelPendingSearch(); clearPlaybackTimer(); sound.stopHum(); state.isRunning = false; state.isPaused = false; renderCurrentState();
   try {
     const asset = `cities/${cityId}.json`;
     const sources = [
       new URL(asset, new URL(import.meta.env.BASE_URL, window.location.origin)).toString(),
       new URL(asset, window.location.href).toString(),
-      new URL(`/cities/${requested}.json`, window.location.origin).toString(),
-      new URL(`/search-algorithms/cities/${requested}.json`, window.location.origin).toString(),
+      new URL(`/cities/${cityId}.json`, window.location.origin).toString(),
+      new URL(`/search-algorithms/cities/${cityId}.json`, window.location.origin).toString(),
     ];
     let city: CityGraph | undefined;
     for (const source of [...new Set(sources)]) {
@@ -216,6 +217,7 @@ const loadRecordingCity = async (requested = new URLSearchParams(window.location
     if (!city) throw new Error("City graph was not found");
     if (loadId !== cityLoadId) return;
     loadedCity = city;
+    setRecordingRoadGraph(city);
     state = createState(createGridFromCityGraph(city));
     if (label) label.textContent = city.name.split(",")[0].toUpperCase();
     if (citySelect) citySelect.disabled = false;
