@@ -7,8 +7,9 @@ import type { Cell, GridSnapshot, SearchEvent, VisualizerState } from "./types";
 const DEFAULT_OPENINGS = 9;
 const STANDARD_SIZE = { rows: 100, cols: 200 };
 
-// Dense enough for real street geometry to read as fine road segments in portrait.
-const PORTRAIT_SIZE = { rows: 292, cols: 180 };
+// Four times as many cells lets the search overlay follow the city-road canvas
+// much more closely in the portrait recording.
+const PORTRAIT_SIZE = { rows: 584, cols: 360 };
 const isRecording = /\/recording\/?$/.test(window.location.pathname);
 let gridSize = isRecording ? PORTRAIT_SIZE : STANDARD_SIZE;
 
