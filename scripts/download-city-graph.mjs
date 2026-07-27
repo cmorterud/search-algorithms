@@ -72,9 +72,13 @@ for (const way of elements.filter((item) => item.type === "way")) {
 }
 
 const usedNodeIds = new Set(edges.flatMap((edge) => [edge.from, edge.to]));
-const usedPoints = [...usedNodeIds].map((id) => coordinates.get(Number(id)));
-const lons = usedPoints.map(([lon]) => lon), lats = usedPoints.map(([, lat]) => lat);
-const minLon = Math.min(...lons), maxLon = Math.max(...lons), minLat = Math.min(...lats), maxLat = Math.max(...lats);
+let minLon = Number.POSITIVE_INFINITY, maxLon = Number.NEGATIVE_INFINITY;
+let minLat = Number.POSITIVE_INFINITY, maxLat = Number.NEGATIVE_INFINITY;
+for (const id of usedNodeIds) {
+  const [lon, lat] = coordinates.get(Number(id));
+  minLon = Math.min(minLon, lon); maxLon = Math.max(maxLon, lon);
+  minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
+}
 const nodes = [...usedNodeIds].map((id) => {
   const [lon, lat] = coordinates.get(Number(id));
   return { id, x: (lon - minLon) / (maxLon - minLon || 1), y: 1 - (lat - minLat) / (maxLat - minLat || 1) };
