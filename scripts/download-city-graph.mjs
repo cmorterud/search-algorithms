@@ -24,13 +24,18 @@ if (!place || !output) {
 }
 
 const headers = { "User-Agent": "search-algorithms-demo/0.1 (local city graph builder)" };
-const geocodeResponse = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(place)}`, { headers });
+const geocodeParams = new URLSearchParams({ format: "jsonv2", limit: "1", polygon_geojson: "1", q: place });
+const geocodeResponse = await fetch(`https://nominatim.openstreetmap.org/search?${geocodeParams}`, { headers });
 if (!geocodeResponse.ok) throw new Error(`Geocoding failed: ${geocodeResponse.status} ${geocodeResponse.statusText}`);
 const [location] = await geocodeResponse.json();
 if (!location) throw new Error(`No OpenStreetMap location found for “${place}”.`);
 
 const [south, north, west, east] = location.boundingbox.map(Number);
-const query = `[out:json][timeout:90];way[highway][highway!~"footway|path|steps|cycleway|bridleway|construction|proposed"](${south},${west},${north},${east});out body;>;out skel qt;`;
+const highwaySelector = 'way[highway][highway!~"footway|path|steps|cycleway|bridleway|construction|proposed"]';
+const areaId = location.osm_type === "relation" ? 3_600_000_000 + Number(location.osm_id) : undefined;
+const query = areaId
+  ? `[out:json][timeout:90];area(${areaId})->.searchArea;${highwaySelector}(area.searchArea);out body;>;out skel qt;`
+  : `[out:json][timeout:90];${highwaySelector}(${south},${west},${north},${east});out body;>;out skel qt;`;
 const overpassEndpoints = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
@@ -50,6 +55,35 @@ if (!overpassResponse) throw new Error("Street download failed on every configur
 const elements = (await overpassResponse.json()).elements;
 
 const coordinates = new Map(elements.filter((item) => item.type === "node").map((item) => [item.id, [item.lon, item.lat]]));
+const ringWithBounds = (coordinates) => {
+  let minLon = Number.POSITIVE_INFINITY, maxLon = Number.NEGATIVE_INFINITY;
+  let minLat = Number.POSITIVE_INFINITY, maxLat = Number.NEGATIVE_INFINITY;
+  for (const [lon, lat] of coordinates) {
+    minLon = Math.min(minLon, lon); maxLon = Math.max(maxLon, lon);
+    minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
+  }
+  return { coordinates, minLon, maxLon, minLat, maxLat };
+};
+const polygonCoordinates = location.geojson?.type === "Polygon"
+  ? [location.geojson.coordinates]
+  : location.geojson?.type === "MultiPolygon"
+    ? location.geojson.coordinates
+    : [];
+const boundary = polygonCoordinates.map((polygon) => polygon.map(ringWithBounds));
+const pointInRing = ([lon, lat], ring) => {
+  if (lon < ring.minLon || lon > ring.maxLon || lat < ring.minLat || lat > ring.maxLat) return false;
+  let inside = false;
+  for (let current = 0, previous = ring.coordinates.length - 1; current < ring.coordinates.length; previous = current++) {
+    const [currentLon, currentLat] = ring.coordinates[current];
+    const [previousLon, previousLat] = ring.coordinates[previous];
+    if ((currentLat > lat) !== (previousLat > lat) && lon < (previousLon - currentLon) * (lat - currentLat) / (previousLat - currentLat) + currentLon) inside = !inside;
+  }
+  return inside;
+};
+const pointInCity = (point) => boundary.length > 0
+  ? boundary.some(([outer, ...holes]) => pointInRing(point, outer) && !holes.some((hole) => pointInRing(point, hole)))
+  : point[0] >= west && point[0] <= east && point[1] >= south && point[1] <= north;
+const cityNodeIds = new Set([...coordinates].filter(([, point]) => pointInCity(point)).map(([id]) => id));
 const edgeKeys = new Set();
 const edges = [];
 const radians = (degrees) => degrees * Math.PI / 180;
@@ -63,7 +97,7 @@ for (const way of elements.filter((item) => item.type === "way")) {
   for (let index = 1; index < way.nodes.length; index += 1) {
     const from = way.nodes[index - 1], to = way.nodes[index];
     const fromPoint = coordinates.get(from), toPoint = coordinates.get(to);
-    if (!fromPoint || !toPoint || from === to) continue;
+    if (!fromPoint || !toPoint || from === to || !cityNodeIds.has(from) || !cityNodeIds.has(to)) continue;
     const key = from < to ? `${from}:${to}` : `${to}:${from}`;
     if (edgeKeys.has(key)) continue;
     edgeKeys.add(key);
@@ -72,6 +106,7 @@ for (const way of elements.filter((item) => item.type === "way")) {
 }
 
 const usedNodeIds = new Set(edges.flatMap((edge) => [edge.from, edge.to]));
+if (usedNodeIds.size === 0) throw new Error(`No drivable streets were found inside the boundary for “${place}”.`);
 let minLon = Number.POSITIVE_INFINITY, maxLon = Number.NEGATIVE_INFINITY;
 let minLat = Number.POSITIVE_INFINITY, maxLat = Number.NEGATIVE_INFINITY;
 for (const id of usedNodeIds) {
