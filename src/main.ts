@@ -11,6 +11,11 @@ const STANDARD_SIZE = { rows: 100, cols: 200 };
 // much more closely in the portrait recording.
 const PORTRAIT_SIZE = { rows: 584, cols: 360 };
 const isRecording = /\/recording\/?$/.test(window.location.pathname);
+const RECORDING_CITIES = [
+  { id: "ann-arbor", label: "Ann Arbor" },
+  { id: "detroit", label: "Detroit" },
+] as const;
+const DEFAULT_RECORDING_CITY = RECORDING_CITIES[0].id;
 let gridSize = isRecording ? PORTRAIT_SIZE : STANDARD_SIZE;
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -54,6 +59,7 @@ if (isRecording) {
       </div>
       <aside class="recording-panel" aria-label="Recording controls">
         <h2>Recording controls</h2>
+        <label class="control-field">City<select id="recording-city-select">${RECORDING_CITIES.map((city) => `<option value="${city.id}">${city.label}</option>`).join("")}</select></label>
         <label class="control-field">Title<input id="recording-title" value="Search Algorithm" maxlength="72" /></label>
         <label class="control-field">Subtitle<input id="recording-subtitle" value="A live route search across an imagined city" maxlength="96" /></label>
         <label class="recording-toggle"><input id="show-algorithm" type="checkbox" checked /> Show algorithm name</label>
@@ -162,6 +168,7 @@ const createGridFromCityGraph = (city: CityGraph): GridSnapshot => {
 };
 const createState = (grid: GridSnapshot): VisualizerState => ({ grid: cloneGrid(grid), originalGrid: cloneGrid(grid), events: [], currentEventIndex: 0, isRunning: false, isPaused: false, visitedCount: 0, frontierCount: 0, pathLength: 0, activeId: undefined, visitedIds: new Set(), frontierIds: new Set(), pathIds: new Set(), missed: false });
 let loadedCity: CityGraph | undefined;
+let cityLoadId = 0;
 let state = createState(isRecording ? createCityGrid() : createMazeGrid(DEFAULT_OPENINGS)); let playbackTimer: number | undefined; let countdownTimer: number | undefined; let playbackStartedAt = 0; const sound = new SearchSound(); sound.setVolume(Number(elements.volumeSlider.value) / 100);
 const searchWorker = new Worker(new URL("./search-worker.ts", import.meta.url), { type: "module" });
 let searchJobId = 0;
@@ -186,11 +193,16 @@ if (isRecording) {
 const selectedAlgorithm = () => algorithms.find((candidate) => candidate.id === elements.algorithmSelect.value) ?? algorithms[0];
 const complexityFor = (algorithmId: string) => ({ bfs: "TC: O(V + E)", dfs: "TC: O(V + E)", dijkstra: "TC: O((V + E) log V)", astar: "TC: O((V + E) log V)" }[algorithmId] ?? "TC: —");
 const renderCurrentState = () => { const algorithm = selectedAlgorithm(); render(elements, state, algorithm.label, changedCellIds); changedCellIds = new Set(); elements.startButton.disabled = state.isRunning || preparingSearch; const title = optionalElement<HTMLElement>("#recording-title-display"); if (title) title.textContent = algorithm.label; const complexity = optionalElement<HTMLElement>("#recording-complexity"); if (complexity) complexity.textContent = complexityFor(elements.algorithmSelect.value); };
-const loadRecordingCity = async () => {
-  const requested = new URLSearchParams(window.location.search).get("city") ?? "ann-arbor";
-  if (!/^[a-z0-9-]+$/i.test(requested)) return;
+const loadRecordingCity = async (requested = new URLSearchParams(window.location.search).get("city") ?? DEFAULT_RECORDING_CITY) => {
+  const cityId = RECORDING_CITIES.some((city) => city.id === requested) ? requested : DEFAULT_RECORDING_CITY;
+  const loadId = ++cityLoadId;
+  const citySelect = optionalElement<HTMLSelectElement>("#recording-city-select");
+  if (citySelect) { citySelect.value = cityId; citySelect.disabled = true; }
+  const label = optionalElement<HTMLElement>("#recording-city-label");
+  if (label) label.textContent = `LOADING ${RECORDING_CITIES.find((city) => city.id === cityId)?.label.toUpperCase() ?? "CITY"}`;
+  cancelPendingSearch(); clearPlaybackTimer(); sound.stopHum(); state.isRunning = false; state.isPaused = false; renderCurrentState();
   try {
-    const asset = `cities/${requested}.json`;
+    const asset = `cities/${cityId}.json`;
     const sources = [
       new URL(asset, new URL(import.meta.env.BASE_URL, window.location.origin)).toString(),
       new URL(asset, window.location.href).toString(),
@@ -202,13 +214,17 @@ const loadRecordingCity = async () => {
       try { const response = await fetch(source); if (response.ok) { city = await response.json() as CityGraph; break; } } catch { /* Try the next valid app base path. */ }
     }
     if (!city) throw new Error("City graph was not found");
+    if (loadId !== cityLoadId) return;
     loadedCity = city;
     state = createState(createGridFromCityGraph(city));
-    const label = optionalElement<HTMLElement>("#recording-city-label"); if (label) label.textContent = city.name.split(",")[0].toUpperCase();
+    if (label) label.textContent = city.name.split(",")[0].toUpperCase();
+    if (citySelect) citySelect.disabled = false;
     window.requestAnimationFrame(drawCityGraph);
     renderCurrentState();
   } catch (error) {
-    const label = optionalElement<HTMLElement>("#recording-city-label"); if (label) label.textContent = "CITY DATA UNAVAILABLE";
+    if (loadId !== cityLoadId) return;
+    if (label) label.textContent = "CITY DATA UNAVAILABLE";
+    if (citySelect) citySelect.disabled = false;
     console.warn("Using the generated city fallback.", error);
   }
 };
@@ -226,7 +242,8 @@ const clearGrid = () => { cancelPendingSearch(); clearPlaybackTimer(); sound.sto
 const cycleCellKind = (id: string) => { if (state.isRunning || preparingSearch) return; const grid = cloneGrid(state.grid); const cell = grid.cells.find((candidate) => idFor(candidate.row, candidate.col) === id); if (!cell || cell.kind === "start" || cell.kind === "target") return; cell.kind = cell.kind === "empty" ? "wall" : "empty"; state = createState(grid); renderCurrentState(); };
 elements.startButton.addEventListener("click", beginRun); elements.pauseButton.addEventListener("click", () => { if (!state.isRunning) return; state.isPaused = !state.isPaused; if (state.isPaused) sound.stopHum(); renderCurrentState(); if (!state.isPaused) playNextEvent(); }); elements.resetButton.addEventListener("click", resetRun); elements.randomizeButton.addEventListener("click", randomize); elements.clearButton.addEventListener("click", clearGrid); elements.algorithmSelect.addEventListener("change", renderCurrentState); elements.densitySlider.addEventListener("input", randomize); elements.gridContainer.addEventListener("click", (event) => { const target = event.target; if (target instanceof HTMLElement && target.dataset.id) cycleCellKind(target.dataset.id); }); elements.soundButton.addEventListener("click", () => { const enabled = !sound.isEnabled(); sound.setEnabled(enabled); if (!enabled) sound.stopHum(); elements.soundButton.textContent = enabled ? "Sound On" : "Sound Off"; elements.soundButton.setAttribute("aria-pressed", String(enabled)); if (enabled) void sound.unlock(); }); elements.volumeSlider.addEventListener("input", () => sound.setVolume(Number(elements.volumeSlider.value) / 100));
 if (isRecording) {
-  const title = getElement<HTMLInputElement>("#recording-title"), subtitle = getElement<HTMLInputElement>("#recording-subtitle"), titleDisplay = getElement<HTMLElement>("#recording-title-display"), subtitleDisplay = getElement<HTMLElement>("#recording-subtitle-display"), algorithm = getElement<HTMLInputElement>("#show-algorithm"), stats = getElement<HTMLInputElement>("#show-stats"), result = getElement<HTMLInputElement>("#show-result"), guides = getElement<HTMLInputElement>("#show-guides"), countdown = getElement<HTMLInputElement>("#enable-countdown"), countdownDisplay = getElement<HTMLElement>("#recording-countdown");
+  const city = getElement<HTMLSelectElement>("#recording-city-select"), title = getElement<HTMLInputElement>("#recording-title"), subtitle = getElement<HTMLInputElement>("#recording-subtitle"), titleDisplay = getElement<HTMLElement>("#recording-title-display"), subtitleDisplay = getElement<HTMLElement>("#recording-subtitle-display"), algorithm = getElement<HTMLInputElement>("#show-algorithm"), stats = getElement<HTMLInputElement>("#show-stats"), result = getElement<HTMLInputElement>("#show-result"), guides = getElement<HTMLInputElement>("#show-guides"), countdown = getElement<HTMLInputElement>("#enable-countdown"), countdownDisplay = getElement<HTMLElement>("#recording-countdown");
+  city.addEventListener("change", () => { const url = new URL(window.location.href); url.searchParams.set("city", city.value); window.history.replaceState(null, "", url); void loadRecordingCity(city.value); });
   title.addEventListener("input", () => titleDisplay.textContent = title.value || "How Search Finds a Path"); subtitle.addEventListener("input", () => subtitleDisplay.textContent = subtitle.value); algorithm.addEventListener("change", () => elements.recording?.algorithmName.toggleAttribute("hidden", !algorithm.checked)); stats.addEventListener("change", () => elements.recording?.stats.toggleAttribute("hidden", !stats.checked)); result.addEventListener("change", () => elements.recording?.result.toggleAttribute("hidden", !result.checked)); guides.addEventListener("change", () => getElement<HTMLElement>("#recording-preview").classList.toggle("guides-hidden", !guides.checked));
   getElement<HTMLButtonElement>("#portrait-preset").addEventListener("click", () => { gridSize = PORTRAIT_SIZE; randomize(); }); getElement<HTMLButtonElement>("#replay-button").addEventListener("click", () => { resetRun(); beginRun(); }); getElement<HTMLButtonElement>("#fullscreen-button").addEventListener("click", () => void getElement<HTMLElement>("#recording-preview").requestFullscreen?.()); getElement<HTMLButtonElement>("#copy-url-button").addEventListener("click", async (event) => { await navigator.clipboard?.writeText(window.location.href); (event.currentTarget as HTMLButtonElement).textContent = "Recording URL copied"; });
   elements.startButton.addEventListener("click", (event) => { if (!countdown.checked || state.isRunning || preparingSearch) return; event.stopImmediatePropagation(); if (countdownTimer) window.clearInterval(countdownTimer); let seconds = 3; countdownDisplay.hidden = false; countdownDisplay.textContent = String(seconds); countdownTimer = window.setInterval(() => { seconds -= 1; countdownDisplay.textContent = seconds ? String(seconds) : "Go"; if (seconds < 0) { window.clearInterval(countdownTimer); countdownDisplay.hidden = true; beginRun(); } }, 1000); }, { capture: true });
