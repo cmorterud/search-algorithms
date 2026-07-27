@@ -44,7 +44,7 @@ if (isRecording) {
             <div class="recording-metrics"><span id="recording-complexity">TC: O(V + E)</span><p id="recording-stats">Nodes: 0 &nbsp; Time: 0.0 ms</p></div>
           </header>
           <div class="search-recording-summary"><span class="recording-countdown" id="recording-countdown" hidden></span></div>
-          <section class="visualizer recording-visualizer" aria-label="Search visualization"><canvas class="city-graph-canvas" id="city-graph-canvas" aria-hidden="true"></canvas><div class="grid-container" id="grid-container"></div></section>
+          <section class="visualizer recording-visualizer" aria-label="Search visualization"><canvas class="city-graph-canvas" id="city-graph-canvas" aria-hidden="true"></canvas><canvas class="search-overlay-canvas" id="search-overlay-canvas" aria-hidden="true"></canvas><div class="grid-container" id="grid-container"></div></section>
           <footer class="search-recording-footer">
             <strong id="recording-result">Ready to search</strong>
             <span class="recording-city-label" id="recording-city-label">LOADING CITY</span>
@@ -173,7 +173,7 @@ const drawCityGraph = () => {
 };
 if (isRecording) {
   const canvas = optionalElement<HTMLCanvasElement>("#city-graph-canvas");
-  if (canvas) new ResizeObserver(() => drawCityGraph()).observe(canvas);
+  if (canvas) new ResizeObserver(() => { drawCityGraph(); renderCurrentState(); }).observe(canvas);
 }
 const selectedAlgorithm = () => algorithms.find((candidate) => candidate.id === elements.algorithmSelect.value) ?? algorithms[0];
 const complexityFor = (algorithmId: string) => ({ bfs: "TC: O(V + E)", dfs: "TC: O(V + E)", dijkstra: "TC: O((V + E) log V)", astar: "TC: O((V + E) log V)" }[algorithmId] ?? "TC: —");

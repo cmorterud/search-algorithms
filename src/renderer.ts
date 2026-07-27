@@ -26,9 +26,14 @@ let renderedGrid: GridSnapshot | undefined;
 const tilesById = new Map<string, HTMLElement>();
 
 const buildGrid = (container: HTMLElement, state: VisualizerState): void => {
-  const fragment = document.createDocumentFragment();
   const isRecordingGrid = Boolean(container.closest(".recording-visualizer"));
   tilesById.clear();
+  if (isRecordingGrid) {
+    container.replaceChildren();
+    renderedGrid = state.grid;
+    return;
+  }
+  const fragment = document.createDocumentFragment();
   state.grid.cells.forEach((cell) => {
     const id = cellId(cell);
     const tile = document.createElement(isRecordingGrid ? "span" : "button");
@@ -45,6 +50,46 @@ const buildGrid = (container: HTMLElement, state: VisualizerState): void => {
   });
   container.replaceChildren(fragment);
   renderedGrid = state.grid;
+};
+
+const renderRecordingOverlay = (
+  state: VisualizerState,
+  gridChanged: boolean,
+  changedIds: ReadonlySet<string>,
+): void => {
+  const canvas = document.querySelector<HTMLCanvasElement>("#search-overlay-canvas");
+  if (!canvas) return;
+  const bounds = canvas.getBoundingClientRect();
+  const pixelRatio = window.devicePixelRatio || 1;
+  const width = Math.round(bounds.width * pixelRatio);
+  const height = Math.round(bounds.height * pixelRatio);
+  const resized = canvas.width !== width || canvas.height !== height;
+  if (resized) { canvas.width = width; canvas.height = height; }
+  const context = canvas.getContext("2d");
+  if (!context || !width || !height) return;
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  const cellWidth = bounds.width / state.grid.cols;
+  const cellHeight = bounds.height / state.grid.rows;
+  const drawCell = (id: string) => {
+    const [row, col] = id.split(":").map(Number);
+    const x = col * cellWidth, y = row * cellHeight;
+    context.clearRect(x, y, cellWidth + .5, cellHeight + .5);
+    const color = state.pathIds.has(id) ? "#e7f6ff" : state.activeId === id ? "#38baff" : state.visitedIds.has(id) ? "#38baff" : state.frontierIds.has(id) ? "#268cff" : undefined;
+    if (color) { context.fillStyle = color; context.fillRect(x, y, cellWidth + .25, cellHeight + .25); }
+  };
+  const drawEndpoint = (id: string, color: string) => {
+    const [row, col] = id.split(":").map(Number);
+    const radius = Math.max(3, Math.min(cellWidth, cellHeight) * 1.8);
+    context.beginPath(); context.arc((col + .5) * cellWidth, (row + .5) * cellHeight, radius, 0, Math.PI * 2);
+    context.fillStyle = color; context.shadowColor = color; context.shadowBlur = radius * 2; context.fill(); context.shadowBlur = 0;
+  };
+  if (gridChanged || resized) {
+    context.clearRect(0, 0, bounds.width, bounds.height);
+    state.visitedIds.forEach(drawCell); state.frontierIds.forEach(drawCell); state.pathIds.forEach(drawCell);
+  } else changedIds.forEach(drawCell);
+  // Keep the endpoint beacons visible even when the final path passes through them.
+  drawEndpoint(state.grid.startId, "#fa543f");
+  drawEndpoint(state.grid.targetId, "#24f28d");
 };
 
 const updateButtonStates = (
@@ -74,14 +119,18 @@ export const render = (
   elements.gridContainer.style.setProperty("--grid-cols", String(state.grid.cols));
   const gridChanged = renderedGrid !== state.grid;
   if (gridChanged) buildGrid(elements.gridContainer, state);
-  const idsToRender = gridChanged ? state.grid.cells.map(cellId) : changedIds;
-  idsToRender.forEach((id) => {
-    const tile = tilesById.get(id); if (!tile) return;
-    tile.classList.toggle("frontier", state.frontierIds.has(id));
-    tile.classList.toggle("visited", state.visitedIds.has(id));
-    tile.classList.toggle("path", state.pathIds.has(id));
-    tile.classList.toggle("active", state.activeId === id);
-  });
+  const isRecordingGrid = Boolean(elements.gridContainer.closest(".recording-visualizer"));
+  if (isRecordingGrid) renderRecordingOverlay(state, gridChanged, changedIds);
+  else {
+    const idsToRender = gridChanged ? state.grid.cells.map(cellId) : changedIds;
+    idsToRender.forEach((id) => {
+      const tile = tilesById.get(id); if (!tile) return;
+      tile.classList.toggle("frontier", state.frontierIds.has(id));
+      tile.classList.toggle("visited", state.visitedIds.has(id));
+      tile.classList.toggle("path", state.pathIds.has(id));
+      tile.classList.toggle("active", state.activeId === id);
+    });
+  }
 
   elements.gridContainer.classList.toggle("missed", state.missed);
   elements.visitedValue.textContent = String(state.visitedCount);
