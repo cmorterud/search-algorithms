@@ -133,15 +133,8 @@ const renderRecordingOverlay = (
     const [row, col] = id.split(":").map(Number);
     return { row, col, x: (col + .5) * cellWidth, y: (row + .5) * cellHeight };
   };
-  const drawStrokes = (
-    ids: Iterable<string>,
-    color: string,
-    connectsTo: (id: string) => boolean,
-    widthScale = 1,
-  ) => {
-    // Keep the explored network close to the source-map road weight. A
-    // full-cell stroke causes neighboring streets to merge into solid blocks.
-    const lineWidth = Math.max(.5, Math.min(cellWidth, cellHeight) * .38 * widthScale);
+  const drawPath = (ids: Iterable<string>) => {
+    const lineWidth = Math.max(.5, Math.min(cellWidth, cellHeight) * .84);
     const dotRadius = Math.max(.08, lineWidth * .08);
     context.beginPath();
     for (const id of ids) {
@@ -150,20 +143,20 @@ const renderRecordingOverlay = (
       context.moveTo(x - dotRadius, y); context.lineTo(x + dotRadius, y);
       [[row - 1, col], [row, col + 1], [row + 1, col], [row, col - 1]].forEach(([neighborRow, neighborCol]) => {
         const neighborId = `${neighborRow}:${neighborCol}`;
-        if (!connectsTo(neighborId)) return;
+        if (!state.pathIds.has(neighborId)) return;
         context.moveTo(x, y);
         context.lineTo((neighborCol + .5) * cellWidth, (neighborRow + .5) * cellHeight);
       });
     }
-    context.strokeStyle = color;
+    context.strokeStyle = "#e7f6ff";
     context.lineWidth = lineWidth;
     context.lineCap = "round";
     context.lineJoin = "round";
     context.stroke();
   };
   const roadIndex = roadIndexFor(state.grid);
-  const drawRoadSegments = (ids: Iterable<string>, color: string, lineWidth: number) => {
-    if (!roadIndex) return false;
+  const recolorRoadSegments = (ids: Iterable<string>, color: string) => {
+    if (!roadIndex) return;
     const segmentIds = new Set<number>();
     for (const id of ids) roadIndex.segmentIdsByCell.get(id)?.forEach((segmentId) => segmentIds.add(segmentId));
     context.beginPath();
@@ -173,11 +166,11 @@ const renderRecordingOverlay = (
       context.lineTo(segment.toX * bounds.width, segment.toY * bounds.height);
     });
     context.strokeStyle = color;
-    context.lineWidth = lineWidth;
+    // Exactly match the dark-blue source road geometry; only its color changes.
+    context.lineWidth = .7;
     context.lineCap = "round";
     context.lineJoin = "round";
     context.stroke();
-    return true;
   };
   const drawEndpoint = (id: string, color: string) => {
     const { x, y } = centerFor(id);
@@ -185,7 +178,6 @@ const renderRecordingOverlay = (
     context.beginPath(); context.arc(x, y, radius, 0, Math.PI * 2);
     context.fillStyle = color; context.shadowColor = color; context.shadowBlur = radius * 2; context.fill(); context.shadowBlur = 0;
   };
-  const isSearched = (id: string) => state.visitedIds.has(id) || state.frontierIds.has(id);
   const drawSearchState = (ids: Iterable<string>) => {
     const frontier: string[] = [], visited: string[] = [], path: string[] = [];
     for (const id of ids) {
@@ -193,9 +185,9 @@ const renderRecordingOverlay = (
       else if (state.visitedIds.has(id)) visited.push(id);
       else if (state.frontierIds.has(id)) frontier.push(id);
     }
-    if (!drawRoadSegments(frontier, "rgba(38, 140, 255, .88)", .7)) drawStrokes(frontier, "rgba(38, 140, 255, .88)", isSearched);
-    if (!drawRoadSegments(visited, "rgba(56, 186, 255, .94)", .85)) drawStrokes(visited, "rgba(56, 186, 255, .94)", isSearched);
-    drawStrokes(path, "#e7f6ff", (id) => state.pathIds.has(id), 2.2);
+    recolorRoadSegments(frontier, "#268cff");
+    recolorRoadSegments(visited, "#38baff");
+    drawPath(path);
   };
   if (gridChanged || resized) {
     context.clearRect(0, 0, bounds.width, bounds.height);
