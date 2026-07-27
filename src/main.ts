@@ -136,7 +136,15 @@ const createGridFromCityGraph = (city: CityGraph): GridSnapshot => {
   const pointFor = (node: { x: number; y: number }) => ({ row: Math.round(1 + node.y * (rows - 3)), col: Math.round(1 + node.x * (cols - 3)) });
   const carveLine = (from: { row: number; col: number }, to: { row: number; col: number }) => {
     let { row, col } = from; const rowStep = Math.sign(to.row - row), colStep = Math.sign(to.col - col); const rowDistance = Math.abs(to.row - row), colDistance = Math.abs(to.col - col); let error = rowDistance - colDistance;
-    while (true) { streets.add(idFor(row, col)); if (row === to.row && col === to.col) break; const doubled = error * 2; if (doubled > -colDistance) { error -= colDistance; row += rowStep; } if (doubled < rowDistance) { error += rowDistance; col += colStep; } }
+    while (true) {
+      streets.add(idFor(row, col));
+      if (row === to.row && col === to.col) break;
+      const doubled = error * 2;
+      // Add each axis step separately. A conventional Bresenham step can move
+      // diagonally, which looks connected but is unreachable to our 4-way searches.
+      if (doubled > -colDistance) { error -= colDistance; row += rowStep; streets.add(idFor(row, col)); }
+      if (doubled < rowDistance) { error += rowDistance; col += colStep; streets.add(idFor(row, col)); }
+    }
   };
   city.edges.forEach((edge) => { const from = nodeById.get(edge.from), to = nodeById.get(edge.to); if (from && to) carveLine(pointFor(from), pointFor(to)); });
   const adjacent = new Map<string, string[]>();
