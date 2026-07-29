@@ -19,6 +19,7 @@ export type SearchSide = "start" | "target";
 export type SearchEvent =
   | { type: "visit"; id: string; side?: SearchSide }
   | { type: "frontier"; id: string; side?: SearchSide }
+  | { type: "iteration"; depthLimit: number }
   | { type: "path"; ids: string[] }
   | { type: "miss" }
   | { type: "clearHighlights" };

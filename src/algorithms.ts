@@ -281,6 +281,46 @@ export const depthFirstSearch = (grid: GridSnapshot): SearchEvent[] => {
   return finish(events, cameFrom, grid.startId, grid.targetId);
 };
 
+export const iterativeDeepeningDepthFirstSearch = (grid: GridSnapshot): SearchEvent[] => {
+  const events: SearchEvent[] = [];
+  const cells = cellMap(grid);
+  const passableCount = grid.cells.reduce((count, cell) => count + (cell.kind === "wall" ? 0 : 1), 0);
+  const maxDepth = Math.max(0, passableCount - 1);
+  let depthLimit = Math.min(16, maxDepth);
+  let iteration = 0;
+
+  while (true) {
+    if (iteration > 0) events.push({ type: "iteration", depthLimit });
+    const stack: { id: string; depth: number; parent?: string }[] = [{ id: grid.startId, depth: 0 }];
+    const scheduledDepth = new Map<string, number>([[grid.startId, 0]]);
+    const cameFrom = new Map<string, string>();
+
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (!current || scheduledDepth.get(current.id) !== current.depth) continue;
+      if (current.parent) cameFrom.set(current.id, current.parent);
+      events.push({ type: "visit", id: current.id });
+      if (current.id === grid.targetId) return finish(events, cameFrom, grid.startId, grid.targetId);
+      if (current.depth >= depthLimit) continue;
+
+      neighborsOf(grid, cells, current.id).reverse().forEach((neighbor) => {
+        const id = cellId(neighbor.row, neighbor.col);
+        const nextDepth = current.depth + 1;
+        if ((scheduledDepth.get(id) ?? Number.POSITIVE_INFINITY) <= nextDepth) return;
+        scheduledDepth.set(id, nextDepth);
+        stack.push({ id, depth: nextDepth, parent: current.id });
+      });
+    }
+
+    if (depthLimit >= maxDepth) break;
+    depthLimit = Math.min(maxDepth, Math.max(depthLimit + 1, depthLimit * 2));
+    iteration += 1;
+  }
+
+  events.push({ type: "miss" }, { type: "clearHighlights" });
+  return events;
+};
+
 export const dijkstraSearch = (grid: GridSnapshot): SearchEvent[] => {
   const events: SearchEvent[] = [];
   const cells = cellMap(grid);
@@ -438,6 +478,7 @@ export const algorithms: AlgorithmDefinition[] = [
   { id: "bfs", label: "Breadth First Search", search: breadthFirstSearch },
   { id: "bidirectional-bfs", label: "Bidirectional BFS", search: bidirectionalBreadthFirstSearch },
   { id: "dfs", label: "Depth First Search", search: depthFirstSearch },
+  { id: "iddfs", label: "Iterative Deepening DFS", search: iterativeDeepeningDepthFirstSearch },
   { id: "dijkstra", label: "Dijkstra", search: dijkstraSearch },
   { id: "astar", label: "A*", search: aStarSearch },
   { id: "greedy", label: "Greedy Best-First Search", search: greedyBestFirstSearch },
