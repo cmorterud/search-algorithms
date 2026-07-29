@@ -54,6 +54,7 @@ if (isRecording) {
           <footer class="search-recording-footer">
             <strong id="recording-result">Ready to search</strong>
             <span class="recording-city-label" id="recording-city-label">LOADING CITY</span>
+            <a class="recording-attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors · ODbL</a>
           </footer>
         </section>
         <div class="recording-guides" aria-hidden="true"><span>9:16 · recording frame</span></div>

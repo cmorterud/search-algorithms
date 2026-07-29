@@ -436,6 +436,8 @@ h1 {
 
 .search-recording-footer strong { display: none; }
 .recording-city-label { margin-top: .25rem; color: rgba(198, 218, 248, .58); font-size: clamp(.56rem, 1.65vw, .8rem); font-weight: 500; letter-spacing: .16em; line-height: 1; text-transform: uppercase; }
+.recording-attribution { width: fit-content; margin: .15rem auto 0; color: rgba(198, 218, 248, .48); font-size: clamp(.42rem, 1.05vw, .58rem); letter-spacing: .025em; line-height: 1.2; text-decoration: none; }
+.recording-attribution:hover, .recording-attribution:focus-visible { color: rgba(218, 232, 255, .82); text-decoration: underline; }
 
 .recording-panel {
   display: grid;
