@@ -179,19 +179,25 @@ const renderRecordingOverlay = (
     context.fillStyle = color; context.shadowColor = color; context.shadowBlur = radius * 2; context.fill(); context.shadowBlur = 0;
   };
   const drawSearchState = (ids: Iterable<string>) => {
-    const frontier: string[] = [], visited: string[] = [], path: string[] = [];
+    const frontier: string[] = [], visited: string[] = [], targetFrontier: string[] = [], targetVisited: string[] = [], path: string[] = [];
     for (const id of ids) {
       if (state.pathIds.has(id)) path.push(id);
-      else if (state.visitedIds.has(id)) visited.push(id);
-      else if (state.frontierIds.has(id)) frontier.push(id);
+      else {
+        if (state.visitedIds.has(id)) visited.push(id);
+        else if (state.frontierIds.has(id)) frontier.push(id);
+        if (state.targetVisitedIds.has(id)) targetVisited.push(id);
+        else if (state.targetFrontierIds.has(id)) targetFrontier.push(id);
+      }
     }
     recolorRoadSegments(frontier, "#268cff");
     recolorRoadSegments(visited, "#38baff");
+    recolorRoadSegments(targetFrontier, "#7c4dff");
+    recolorRoadSegments(targetVisited, "#c084fc");
     drawPath(path);
   };
   if (gridChanged || resized) {
     context.clearRect(0, 0, bounds.width, bounds.height);
-    drawSearchState(new Set([...state.frontierIds, ...state.visitedIds, ...state.pathIds]));
+    drawSearchState(new Set([...state.frontierIds, ...state.visitedIds, ...state.targetFrontierIds, ...state.targetVisitedIds, ...state.pathIds]));
   } else drawSearchState(changedIds);
   // Keep the endpoint beacons visible even when the final path passes through them.
   drawEndpoint(state.grid.startId, "#fa543f");
@@ -233,6 +239,8 @@ export const render = (
       const tile = tilesById.get(id); if (!tile) return;
       tile.classList.toggle("frontier", state.frontierIds.has(id));
       tile.classList.toggle("visited", state.visitedIds.has(id));
+      tile.classList.toggle("frontier-target", state.targetFrontierIds.has(id));
+      tile.classList.toggle("visited-target", state.targetVisitedIds.has(id));
       tile.classList.toggle("path", state.pathIds.has(id));
       tile.classList.toggle("active", state.activeId === id);
     });

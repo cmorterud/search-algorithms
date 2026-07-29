@@ -14,9 +14,11 @@ export interface GridSnapshot {
   targetId: string;
 }
 
+export type SearchSide = "start" | "target";
+
 export type SearchEvent =
-  | { type: "visit"; id: string }
-  | { type: "frontier"; id: string }
+  | { type: "visit"; id: string; side?: SearchSide }
+  | { type: "frontier"; id: string; side?: SearchSide }
   | { type: "path"; ids: string[] }
   | { type: "miss" }
   | { type: "clearHighlights" };
@@ -36,6 +38,8 @@ export interface VisualizerState {
   activeId: string | undefined;
   visitedIds: Set<string>;
   frontierIds: Set<string>;
+  targetVisitedIds: Set<string>;
+  targetFrontierIds: Set<string>;
   pathIds: Set<string>;
   missed: boolean;
 }

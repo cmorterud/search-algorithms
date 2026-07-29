@@ -58,13 +58,14 @@ const enqueueFrontier = (
   events: SearchEvent[],
   frontierSet: Set<string>,
   id: string,
+  side?: "start" | "target",
 ): void => {
   if (frontierSet.has(id)) {
     return;
   }
 
   frontierSet.add(id);
-  events.push({ type: "frontier", id });
+  events.push({ type: "frontier", id, side });
 };
 
 const finish = (
@@ -128,6 +129,62 @@ export const breadthFirstSearch = (grid: GridSnapshot): SearchEvent[] => {
   }
 
   return finish(events, cameFrom, grid.startId, grid.targetId);
+};
+
+export const bidirectionalBreadthFirstSearch = (grid: GridSnapshot): SearchEvent[] => {
+  const events: SearchEvent[] = [];
+  const cells = cellMap(grid);
+  const startQueue = [grid.startId], targetQueue = [grid.targetId];
+  const startDiscovered = new Set(startQueue), targetDiscovered = new Set(targetQueue);
+  const startVisited = new Set<string>(), targetVisited = new Set<string>();
+  const fromStart = new Map<string, string>(), fromTarget = new Map<string, string>();
+
+  const expandLayer = (
+    queue: string[],
+    discovered: Set<string>,
+    visited: Set<string>,
+    otherDiscovered: Set<string>,
+    cameFrom: Map<string, string>,
+    side: "start" | "target",
+  ): string | undefined => {
+    const layerSize = queue.length;
+    for (let index = 0; index < layerSize; index += 1) {
+      const current = queue.shift();
+      if (!current || visited.has(current)) continue;
+      visited.add(current);
+      events.push({ type: "visit", id: current, side });
+      if (otherDiscovered.has(current)) return current;
+      for (const neighbor of neighborsOf(grid, cells, current)) {
+        const id = cellId(neighbor.row, neighbor.col);
+        if (discovered.has(id)) continue;
+        cameFrom.set(id, current);
+        queue.push(id);
+        enqueueFrontier(events, discovered, id, side);
+        if (otherDiscovered.has(id)) return id;
+      }
+    }
+    return undefined;
+  };
+
+  while (startQueue.length > 0 && targetQueue.length > 0) {
+    const meetingFromStart = expandLayer(startQueue, startDiscovered, startVisited, targetDiscovered, fromStart, "start");
+    const meeting = meetingFromStart ?? expandLayer(targetQueue, targetDiscovered, targetVisited, startDiscovered, fromTarget, "target");
+    if (!meeting) continue;
+    const path = reconstructPath(fromStart, grid.startId, meeting);
+    let current = meeting;
+    while (path.length > 0 && current !== grid.targetId) {
+      const next = fromTarget.get(current);
+      if (!next) { path.length = 0; break; }
+      path.push(next);
+      current = next;
+    }
+    events.push(path.length > 0 ? { type: "path", ids: path } : { type: "miss" });
+    events.push({ type: "clearHighlights" });
+    return events;
+  }
+
+  events.push({ type: "miss" }, { type: "clearHighlights" });
+  return events;
 };
 
 export const depthFirstSearch = (grid: GridSnapshot): SearchEvent[] => {
@@ -257,9 +314,73 @@ export const aStarSearch = (grid: GridSnapshot): SearchEvent[] => {
   return finish(events, cameFrom, grid.startId, grid.targetId);
 };
 
+export const greedyBestFirstSearch = (grid: GridSnapshot): SearchEvent[] => {
+  const events: SearchEvent[] = [];
+  const cells = cellMap(grid);
+  const queue: QueueEntry[] = [{ id: grid.startId, priority: heuristic(cells, grid.startId, grid.targetId) }];
+  const queued = new Set([grid.startId]);
+  const visited = new Set<string>();
+  const cameFrom = new Map<string, string>();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || visited.has(current.id)) continue;
+    visited.add(current.id);
+    events.push({ type: "visit", id: current.id });
+    if (current.id === grid.targetId) return finish(events, cameFrom, grid.startId, grid.targetId);
+
+    neighborsOf(grid, cells, current.id).forEach((neighbor) => {
+      const id = cellId(neighbor.row, neighbor.col);
+      if (visited.has(id) || queued.has(id)) return;
+      cameFrom.set(id, current.id);
+      enqueueFrontier(events, queued, id);
+      pushPriority(queue, { id, priority: heuristic(cells, id, grid.targetId) });
+    });
+  }
+
+  return finish(events, cameFrom, grid.startId, grid.targetId);
+};
+
+export const beamSearch = (grid: GridSnapshot): SearchEvent[] => {
+  const BEAM_WIDTH = 64;
+  const events: SearchEvent[] = [];
+  const cells = cellMap(grid);
+  let frontier = [grid.startId];
+  const discovered = new Set(frontier);
+  const visited = new Set<string>();
+  const cameFrom = new Map<string, string>();
+
+  while (frontier.length > 0) {
+    const candidates = new Map<string, { parent: string; priority: number }>();
+    for (const current of frontier) {
+      if (visited.has(current)) continue;
+      visited.add(current);
+      events.push({ type: "visit", id: current });
+      if (current === grid.targetId) return finish(events, cameFrom, grid.startId, grid.targetId);
+      neighborsOf(grid, cells, current).forEach((neighbor) => {
+        const id = cellId(neighbor.row, neighbor.col);
+        if (discovered.has(id) || candidates.has(id)) return;
+        candidates.set(id, { parent: current, priority: heuristic(cells, id, grid.targetId) });
+      });
+    }
+    candidates.forEach((_, id) => discovered.add(id));
+    const selected = [...candidates].sort(([, a], [, b]) => a.priority - b.priority).slice(0, BEAM_WIDTH);
+    selected.forEach(([id, candidate]) => {
+      cameFrom.set(id, candidate.parent);
+      events.push({ type: "frontier", id });
+    });
+    frontier = selected.map(([id]) => id);
+  }
+
+  return finish(events, cameFrom, grid.startId, grid.targetId);
+};
+
 export const algorithms: AlgorithmDefinition[] = [
   { id: "bfs", label: "Breadth First Search", search: breadthFirstSearch },
+  { id: "bidirectional-bfs", label: "Bidirectional BFS", search: bidirectionalBreadthFirstSearch },
   { id: "dfs", label: "Depth First Search", search: depthFirstSearch },
   { id: "dijkstra", label: "Dijkstra", search: dijkstraSearch },
   { id: "astar", label: "A*", search: aStarSearch },
+  { id: "greedy", label: "Greedy Best-First Search", search: greedyBestFirstSearch },
+  { id: "beam", label: "Beam Search", search: beamSearch },
 ];

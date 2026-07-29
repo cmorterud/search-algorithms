@@ -158,6 +158,15 @@ h1 {
   color: #ffffff;
 }
 
+.cell.frontier-target {
+  background: #8f6ae8;
+}
+
+.cell.visited-target {
+  background: #7041a3;
+  color: #ffffff;
+}
+
 .cell.path {
   background: #d6a938;
   color: #121820;
