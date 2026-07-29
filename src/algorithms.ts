@@ -5,6 +5,65 @@ interface QueueEntry {
   priority: number;
 }
 
+interface HeapEntry extends QueueEntry {
+  order: number;
+}
+
+class MinPriorityQueue {
+  private entries: HeapEntry[] = [];
+  private nextOrder = 0;
+
+  get length(): number {
+    return this.entries.length;
+  }
+
+  push(entry: QueueEntry): void {
+    const candidate = { ...entry, order: this.nextOrder++ };
+    this.entries.push(candidate);
+    let index = this.entries.length - 1;
+
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2);
+      if (this.compare(this.entries[parent], candidate) <= 0) break;
+      this.entries[index] = this.entries[parent];
+      index = parent;
+    }
+
+    this.entries[index] = candidate;
+  }
+
+  pop(): QueueEntry | undefined {
+    const root = this.entries[0];
+    const last = this.entries.pop();
+    if (!root || !last) return root;
+
+    if (this.entries.length > 0) {
+      let index = 0;
+      while (true) {
+        const left = index * 2 + 1;
+        const right = left + 1;
+        if (left >= this.entries.length) break;
+        const child = right < this.entries.length && this.compare(this.entries[right], this.entries[left]) < 0 ? right : left;
+        if (this.compare(last, this.entries[child]) <= 0) break;
+        this.entries[index] = this.entries[child];
+        index = child;
+      }
+      this.entries[index] = last;
+    }
+
+    return { id: root.id, priority: root.priority };
+  }
+
+  private compare(a: HeapEntry, b: HeapEntry): number {
+    return a.priority - b.priority || a.order - b.order;
+  }
+}
+
+interface FifoQueue {
+  items: string[];
+  head: number;
+}
+
 const cellId = (row: number, col: number): string => `${row}:${col}`;
 
 const reconstructPath = (
@@ -80,11 +139,6 @@ const finish = (
   return events;
 };
 
-const pushPriority = (queue: QueueEntry[], entry: QueueEntry): void => {
-  queue.push(entry);
-  queue.sort((a, b) => a.priority - b.priority);
-};
-
 const heuristic = (cells: Map<string, Cell>, id: string, targetId: string): number => {
   const cell = cells.get(id);
   const target = cells.get(targetId);
@@ -99,12 +153,13 @@ export const breadthFirstSearch = (grid: GridSnapshot): SearchEvent[] => {
   const events: SearchEvent[] = [];
   const cells = cellMap(grid);
   const queue = [grid.startId];
+  let queueHead = 0;
   const queued = new Set(queue);
   const visited = new Set<string>();
   const cameFrom = new Map<string, string>();
 
-  while (queue.length > 0) {
-    const current = queue.shift();
+  while (queueHead < queue.length) {
+    const current = queue[queueHead++];
     if (!current || visited.has(current)) {
       continue;
     }
@@ -134,22 +189,23 @@ export const breadthFirstSearch = (grid: GridSnapshot): SearchEvent[] => {
 export const bidirectionalBreadthFirstSearch = (grid: GridSnapshot): SearchEvent[] => {
   const events: SearchEvent[] = [];
   const cells = cellMap(grid);
-  const startQueue = [grid.startId], targetQueue = [grid.targetId];
-  const startDiscovered = new Set(startQueue), targetDiscovered = new Set(targetQueue);
+  const startQueue: FifoQueue = { items: [grid.startId], head: 0 };
+  const targetQueue: FifoQueue = { items: [grid.targetId], head: 0 };
+  const startDiscovered = new Set(startQueue.items), targetDiscovered = new Set(targetQueue.items);
   const startVisited = new Set<string>(), targetVisited = new Set<string>();
   const fromStart = new Map<string, string>(), fromTarget = new Map<string, string>();
 
   const expandLayer = (
-    queue: string[],
+    queue: FifoQueue,
     discovered: Set<string>,
     visited: Set<string>,
     otherDiscovered: Set<string>,
     cameFrom: Map<string, string>,
     side: "start" | "target",
   ): string | undefined => {
-    const layerSize = queue.length;
+    const layerSize = queue.items.length - queue.head;
     for (let index = 0; index < layerSize; index += 1) {
-      const current = queue.shift();
+      const current = queue.items[queue.head++];
       if (!current || visited.has(current)) continue;
       visited.add(current);
       events.push({ type: "visit", id: current, side });
@@ -158,7 +214,7 @@ export const bidirectionalBreadthFirstSearch = (grid: GridSnapshot): SearchEvent
         const id = cellId(neighbor.row, neighbor.col);
         if (discovered.has(id)) continue;
         cameFrom.set(id, current);
-        queue.push(id);
+        queue.items.push(id);
         enqueueFrontier(events, discovered, id, side);
         if (otherDiscovered.has(id)) return id;
       }
@@ -166,7 +222,7 @@ export const bidirectionalBreadthFirstSearch = (grid: GridSnapshot): SearchEvent
     return undefined;
   };
 
-  while (startQueue.length > 0 && targetQueue.length > 0) {
+  while (startQueue.head < startQueue.items.length && targetQueue.head < targetQueue.items.length) {
     const meetingFromStart = expandLayer(startQueue, startDiscovered, startVisited, targetDiscovered, fromStart, "start");
     const meeting = meetingFromStart ?? expandLayer(targetQueue, targetDiscovered, targetVisited, startDiscovered, fromTarget, "target");
     if (!meeting) continue;
@@ -228,14 +284,15 @@ export const depthFirstSearch = (grid: GridSnapshot): SearchEvent[] => {
 export const dijkstraSearch = (grid: GridSnapshot): SearchEvent[] => {
   const events: SearchEvent[] = [];
   const cells = cellMap(grid);
-  const queue: QueueEntry[] = [{ id: grid.startId, priority: 0 }];
+  const queue = new MinPriorityQueue();
+  queue.push({ id: grid.startId, priority: 0 });
   const visited = new Set<string>();
   const frontier = new Set([grid.startId]);
   const cameFrom = new Map<string, string>();
   const distance = new Map<string, number>([[grid.startId, 0]]);
 
   while (queue.length > 0) {
-    const current = queue.shift();
+    const current = queue.pop();
     if (!current || visited.has(current.id)) {
       continue;
     }
@@ -261,7 +318,7 @@ export const dijkstraSearch = (grid: GridSnapshot): SearchEvent[] => {
       cameFrom.set(id, current.id);
       distance.set(id, nextDistance);
       enqueueFrontier(events, frontier, id);
-      pushPriority(queue, { id, priority: nextDistance });
+      queue.push({ id, priority: nextDistance });
     });
   }
 
@@ -271,14 +328,15 @@ export const dijkstraSearch = (grid: GridSnapshot): SearchEvent[] => {
 export const aStarSearch = (grid: GridSnapshot): SearchEvent[] => {
   const events: SearchEvent[] = [];
   const cells = cellMap(grid);
-  const queue: QueueEntry[] = [{ id: grid.startId, priority: 0 }];
+  const queue = new MinPriorityQueue();
+  queue.push({ id: grid.startId, priority: 0 });
   const visited = new Set<string>();
   const frontier = new Set([grid.startId]);
   const cameFrom = new Map<string, string>();
   const distance = new Map<string, number>([[grid.startId, 0]]);
 
   while (queue.length > 0) {
-    const current = queue.shift();
+    const current = queue.pop();
     if (!current || visited.has(current.id)) {
       continue;
     }
@@ -304,7 +362,7 @@ export const aStarSearch = (grid: GridSnapshot): SearchEvent[] => {
       cameFrom.set(id, current.id);
       distance.set(id, nextDistance);
       enqueueFrontier(events, frontier, id);
-      pushPriority(queue, {
+      queue.push({
         id,
         priority: nextDistance + heuristic(cells, id, grid.targetId),
       });
@@ -317,13 +375,14 @@ export const aStarSearch = (grid: GridSnapshot): SearchEvent[] => {
 export const greedyBestFirstSearch = (grid: GridSnapshot): SearchEvent[] => {
   const events: SearchEvent[] = [];
   const cells = cellMap(grid);
-  const queue: QueueEntry[] = [{ id: grid.startId, priority: heuristic(cells, grid.startId, grid.targetId) }];
+  const queue = new MinPriorityQueue();
+  queue.push({ id: grid.startId, priority: heuristic(cells, grid.startId, grid.targetId) });
   const queued = new Set([grid.startId]);
   const visited = new Set<string>();
   const cameFrom = new Map<string, string>();
 
   while (queue.length > 0) {
-    const current = queue.shift();
+    const current = queue.pop();
     if (!current || visited.has(current.id)) continue;
     visited.add(current.id);
     events.push({ type: "visit", id: current.id });
@@ -334,7 +393,7 @@ export const greedyBestFirstSearch = (grid: GridSnapshot): SearchEvent[] => {
       if (visited.has(id) || queued.has(id)) return;
       cameFrom.set(id, current.id);
       enqueueFrontier(events, queued, id);
-      pushPriority(queue, { id, priority: heuristic(cells, id, grid.targetId) });
+      queue.push({ id, priority: heuristic(cells, id, grid.targetId) });
     });
   }
 
