@@ -293,13 +293,17 @@ export const iterativeDeepeningDepthFirstSearch = (grid: GridSnapshot): SearchEv
     if (iteration > 0) events.push({ type: "iteration", depthLimit });
     const stack: { id: string; depth: number; parent?: string }[] = [{ id: grid.startId, depth: 0 }];
     const scheduledDepth = new Map<string, number>([[grid.startId, 0]]);
+    const emitted = new Set<string>();
     const cameFrom = new Map<string, string>();
 
     while (stack.length > 0) {
       const current = stack.pop();
       if (!current || scheduledDepth.get(current.id) !== current.depth) continue;
       if (current.parent) cameFrom.set(current.id, current.parent);
-      events.push({ type: "visit", id: current.id });
+      if (!emitted.has(current.id)) {
+        emitted.add(current.id);
+        events.push({ type: "visit", id: current.id });
+      }
       if (current.id === grid.targetId) return finish(events, cameFrom, grid.startId, grid.targetId);
       if (current.depth >= depthLimit) continue;
 
