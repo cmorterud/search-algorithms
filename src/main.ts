@@ -14,6 +14,7 @@ const isRecording = /\/recording\/?$/.test(window.location.pathname);
 const RECORDING_CITIES = [
   { id: "ann-arbor", label: "Ann Arbor" },
   { id: "detroit", label: "Detroit" },
+  { id: "washington-dc", label: "Washington, DC" },
 ] as const;
 const DEFAULT_RECORDING_CITY = RECORDING_CITIES[0].id;
 let gridSize = isRecording ? PORTRAIT_SIZE : STANDARD_SIZE;
@@ -195,11 +196,12 @@ const complexityFor = (algorithmId: string) => ({ bfs: "TC: O(V + E)", "bidirect
 const renderCurrentState = () => { const algorithm = selectedAlgorithm(); render(elements, state, algorithm.label, changedCellIds); changedCellIds = new Set(); elements.startButton.disabled = state.isRunning || preparingSearch; const title = optionalElement<HTMLElement>("#recording-title-display"); if (title) title.textContent = algorithm.label; const complexity = optionalElement<HTMLElement>("#recording-complexity"); if (complexity) complexity.textContent = complexityFor(elements.algorithmSelect.value); };
 const loadRecordingCity = async (requested = new URLSearchParams(window.location.search).get("city") ?? DEFAULT_RECORDING_CITY) => {
   const cityId = RECORDING_CITIES.some((city) => city.id === requested) ? requested : DEFAULT_RECORDING_CITY;
+  const cityLabel = RECORDING_CITIES.find((city) => city.id === cityId)?.label ?? "City";
   const loadId = ++cityLoadId;
   const citySelect = optionalElement<HTMLSelectElement>("#recording-city-select");
   if (citySelect) { citySelect.value = cityId; citySelect.disabled = true; }
   const label = optionalElement<HTMLElement>("#recording-city-label");
-  if (label) label.textContent = `LOADING ${RECORDING_CITIES.find((city) => city.id === cityId)?.label.toUpperCase() ?? "CITY"}`;
+  if (label) label.textContent = `LOADING ${cityLabel.toUpperCase()}`;
   setRecordingRoadGraph(undefined);
   cancelPendingSearch(); clearPlaybackTimer(); sound.stopHum(); state.isRunning = false; state.isPaused = false; renderCurrentState();
   try {
@@ -219,7 +221,7 @@ const loadRecordingCity = async (requested = new URLSearchParams(window.location
     loadedCity = city;
     setRecordingRoadGraph(city);
     state = createState(createGridFromCityGraph(city));
-    if (label) label.textContent = city.name.split(",")[0].toUpperCase();
+    if (label) label.textContent = cityLabel.toUpperCase();
     if (citySelect) citySelect.disabled = false;
     window.requestAnimationFrame(drawCityGraph);
     renderCurrentState();
