@@ -172,6 +172,9 @@ const createState = (grid: GridSnapshot): VisualizerState => ({ grid: cloneGrid(
 let loadedCity: CityGraph | undefined;
 let cityLoadId = 0;
 let state = createState(isRecording ? createCityGrid() : createMazeGrid(DEFAULT_OPENINGS)); let playbackTimer: number | undefined; let countdownTimer: number | undefined; let playbackStartedAt = 0; const sound = new SearchSound(); sound.setVolume(Number(elements.volumeSlider.value) / 100);
+const unlockSoundFromGesture = () => { if (sound.isEnabled()) void sound.unlock(); };
+if ("PointerEvent" in window) document.addEventListener("pointerdown", unlockSoundFromGesture, { capture: true, passive: true });
+else document.addEventListener("touchstart", unlockSoundFromGesture, { capture: true, passive: true });
 const searchWorker = new Worker(new URL("./search-worker.ts", import.meta.url), { type: "module" });
 let searchJobId = 0;
 let preparingSearch = false;

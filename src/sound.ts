@@ -25,21 +25,24 @@ export class SearchSound {
 
   async unlock(): Promise<void> {
     if (!this.context) {
-      const AudioContextConstructor = globalThis.AudioContext;
+      const AudioContextConstructor = globalThis.AudioContext
+        ?? (globalThis as typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AudioContextConstructor) {
         return;
       }
 
       try {
         this.context = new AudioContextConstructor();
+        this.primeOutput();
       } catch {
         return;
       }
     }
 
-    if (this.context.state === "suspended") {
+    if (this.context.state !== "running") {
       try {
         await this.context.resume();
+        this.primeOutput();
       } catch {
         return;
       }
@@ -56,7 +59,8 @@ export class SearchSound {
     switch (event.type) {
       case "frontier":
       case "visit":
-        this.updateHum(145 + progress * 220 * pitch);
+        // Keep the exploration voice above the bass roll-off of phone speakers.
+        this.updateHum(320 + progress * 480 * pitch);
         break;
       case "path":
         this.fadeHum();
@@ -77,7 +81,7 @@ export class SearchSound {
     if (!this.humOscillator || !this.humGain) {
       this.humOscillator = this.context.createOscillator();
       this.humGain = this.context.createGain();
-      this.humOscillator.type = "sine";
+      this.humOscillator.type = "triangle";
       this.humGain.gain.setValueAtTime(0.0001, now);
       this.humOscillator.connect(this.humGain);
       this.humGain.connect(this.context.destination);
@@ -94,6 +98,14 @@ export class SearchSound {
     const now = this.context.currentTime;
     this.humGain.gain.cancelScheduledValues(now);
     this.humGain.gain.setTargetAtTime(.0001, now, .08);
+  }
+
+  private primeOutput(): void {
+    if (!this.context) return;
+    const source = this.context.createBufferSource();
+    source.buffer = this.context.createBuffer(1, 1, this.context.sampleRate);
+    source.connect(this.context.destination);
+    source.start();
   }
 
   private playSuccessChime(pitch: number): void {
