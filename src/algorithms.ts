@@ -293,7 +293,7 @@ export const bidirectionalAStarSearch = (grid: GridSnapshot): SearchEvent[] => {
   const fromTarget = new Map<string, string>();
   let bestCost = grid.startId === grid.targetId ? 0 : Number.POSITIVE_INFINITY;
   let meeting: string | undefined = grid.startId === grid.targetId ? grid.startId : undefined;
-  let expandForwardOnTie = true;
+  let expandForwardNext = true;
 
   // Balanced potentials let both A* searches share one valid lower bound.
   const potential = (id: string): number =>
@@ -351,14 +351,12 @@ export const bidirectionalAStarSearch = (grid: GridSnapshot): SearchEvent[] => {
     if (!forward || !backward) break;
     if (meeting && forward.priority + backward.priority >= bestCost) break;
 
-    const expandForward = forward.priority < backward.priority
-      || (forward.priority === backward.priority && expandForwardOnTie);
-    if (forward.priority === backward.priority) expandForwardOnTie = !expandForwardOnTie;
-    if (expandForward) {
+    if (expandForwardNext) {
       expand(forwardQueue, forwardDistance, backwardDistance, forwardVisited, forwardFrontier, fromStart, "start");
     } else {
       expand(backwardQueue, backwardDistance, forwardDistance, backwardVisited, backwardFrontier, fromTarget, "target");
     }
+    expandForwardNext = !expandForwardNext;
   }
 
   if (!meeting) {
