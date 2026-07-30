@@ -71,6 +71,7 @@ export class SearchSound {
         this.playTone(170 * pitch, "sawtooth", 0.12, 0.55);
         break;
       case "clearHighlights":
+      case "restart":
         break;
     }
   }

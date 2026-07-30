@@ -227,12 +227,13 @@ export const render = (
   state: VisualizerState,
   algorithmLabel: string,
   changedIds: ReadonlySet<string>,
+  resetOverlay = false,
 ): void => {
   elements.gridContainer.style.setProperty("--grid-cols", String(state.grid.cols));
   const gridChanged = renderedGrid !== state.grid;
   if (gridChanged) buildGrid(elements.gridContainer, state);
   const isRecordingGrid = Boolean(elements.gridContainer.closest(".recording-visualizer"));
-  if (isRecordingGrid) renderRecordingOverlay(state, gridChanged, changedIds);
+  if (isRecordingGrid) renderRecordingOverlay(state, gridChanged || resetOverlay, changedIds);
   else {
     const idsToRender = gridChanged ? state.grid.cells.map(cellId) : changedIds;
     idsToRender.forEach((id) => {

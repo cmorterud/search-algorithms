@@ -59,6 +59,36 @@ class MinPriorityQueue {
     return { id: root.id, priority: root.priority };
   }
 
+  popWorst(): QueueEntry | undefined {
+    if (this.entries.length === 0) return undefined;
+    let worstIndex = 0;
+    for (let index = 1; index < this.entries.length; index += 1) {
+      if (this.compare(this.entries[index], this.entries[worstIndex]) > 0) worstIndex = index;
+    }
+    const worst = this.entries[worstIndex];
+    const last = this.entries.pop();
+    if (last && worstIndex < this.entries.length) {
+      this.entries[worstIndex] = last;
+      let index = worstIndex;
+      while (index > 0) {
+        const parent = Math.floor((index - 1) / 2);
+        if (this.compare(this.entries[parent], this.entries[index]) <= 0) break;
+        [this.entries[parent], this.entries[index]] = [this.entries[index], this.entries[parent]];
+        index = parent;
+      }
+      while (true) {
+        const left = index * 2 + 1;
+        const right = left + 1;
+        if (left >= this.entries.length) break;
+        const child = right < this.entries.length && this.compare(this.entries[right], this.entries[left]) < 0 ? right : left;
+        if (this.compare(this.entries[index], this.entries[child]) <= 0) break;
+        [this.entries[index], this.entries[child]] = [this.entries[child], this.entries[index]];
+        index = child;
+      }
+    }
+    return { id: worst.id, priority: worst.priority };
+  }
+
   private compare(a: HeapEntry, b: HeapEntry): number {
     return a.priority - b.priority || a.order - b.order;
   }
@@ -484,6 +514,134 @@ export const aStarSearch = (grid: GridSnapshot): SearchEvent[] =>
 export const weightedAStarSearch = (grid: GridSnapshot): SearchEvent[] =>
   aStarSearchWithWeight(grid, 2);
 
+export const anytimeRepairingAStarSearch = (grid: GridSnapshot): SearchEvent[] => {
+  const WEIGHTS = [3, 2, 1.5, 1];
+  const events: SearchEvent[] = [];
+  const cells = cellMap(grid);
+  const distance = new Map<string, number>([[grid.startId, 0]]);
+  const cameFrom = new Map<string, string>();
+  const inconsistent = new Set<string>();
+  const closed = new Set<string>();
+  let open = new MinPriorityQueue();
+  let openScores = new Map<string, number>();
+
+  const pushOpen = (id: string, weight: number): void => {
+    const priority = (distance.get(id) ?? Number.POSITIVE_INFINITY)
+      + weight * heuristic(cells, id, grid.targetId);
+    openScores.set(id, priority);
+    open.push({ id, priority });
+  };
+
+  const nextValid = (): QueueEntry | undefined => {
+    while (open.peek()) {
+      const entry = open.peek()!;
+      if (openScores.get(entry.id) === entry.priority) return entry;
+      open.pop();
+    }
+    return undefined;
+  };
+
+  pushOpen(grid.startId, WEIGHTS[0]);
+  let bestPath: string[] = [];
+
+  WEIGHTS.forEach((weight, phase) => {
+    if (phase > 0) {
+      events.push({ type: "restart", label: `w=${weight}` });
+      const candidates = new Set([...openScores.keys(), ...inconsistent]);
+      open = new MinPriorityQueue();
+      openScores = new Map();
+      candidates.forEach((id) => pushOpen(id, weight));
+      inconsistent.clear();
+      closed.clear();
+    }
+
+    const phaseFrontier = new Set<string>();
+    while (true) {
+      const next = nextValid();
+      const targetDistance = distance.get(grid.targetId) ?? Number.POSITIVE_INFINITY;
+      if (!next || targetDistance <= next.priority) break;
+      const current = open.pop();
+      if (!current || openScores.get(current.id) !== current.priority) continue;
+      openScores.delete(current.id);
+      closed.add(current.id);
+      events.push({ type: "visit", id: current.id });
+
+      for (const neighbor of neighborsOf(grid, cells, current.id)) {
+        const id = cellId(neighbor.row, neighbor.col);
+        const nextDistance = (distance.get(current.id) ?? 0) + 1;
+        if (nextDistance >= (distance.get(id) ?? Number.POSITIVE_INFINITY)) continue;
+        distance.set(id, nextDistance);
+        cameFrom.set(id, current.id);
+        if (closed.has(id)) inconsistent.add(id);
+        else {
+          pushOpen(id, weight);
+          enqueueFrontier(events, phaseFrontier, id);
+        }
+      }
+    }
+
+    const path = reconstructPath(cameFrom, grid.startId, grid.targetId);
+    if (path.length > 0 && (bestPath.length === 0 || path.length < bestPath.length)) bestPath = path;
+    if (bestPath.length > 0) events.push({ type: "path", ids: bestPath });
+  });
+
+  events.push(bestPath.length > 0 ? { type: "path", ids: bestPath } : { type: "miss" });
+  events.push({ type: "clearHighlights" });
+  return events;
+};
+
+export const simplifiedMemoryBoundedAStarSearch = (grid: GridSnapshot): SearchEvent[] => {
+  const MEMORY_LIMIT = 512;
+  const events: SearchEvent[] = [];
+  const cells = cellMap(grid);
+  const queue = new MinPriorityQueue();
+  const openScores = new Map<string, number>();
+  const distance = new Map<string, number>([[grid.startId, 0]]);
+  const cameFrom = new Map<string, string>();
+  const visited = new Set<string>();
+
+  const pushOpen = (id: string, priority: number): void => {
+    openScores.set(id, priority);
+    queue.push({ id, priority });
+  };
+  pushOpen(grid.startId, heuristic(cells, grid.startId, grid.targetId));
+
+  const trimOpenSet = (): void => {
+    while (openScores.size > MEMORY_LIMIT) {
+      const removed = queue.popWorst();
+      if (!removed || openScores.get(removed.id) !== removed.priority) continue;
+      openScores.delete(removed.id);
+      if (!visited.has(removed.id)) {
+        distance.delete(removed.id);
+        cameFrom.delete(removed.id);
+      }
+    }
+  };
+
+  while (queue.length > 0) {
+    const current = queue.pop();
+    if (!current || visited.has(current.id) || openScores.get(current.id) !== current.priority) continue;
+    openScores.delete(current.id);
+    visited.add(current.id);
+    events.push({ type: "visit", id: current.id });
+    if (current.id === grid.targetId) return finish(events, cameFrom, grid.startId, grid.targetId);
+
+    for (const neighbor of neighborsOf(grid, cells, current.id)) {
+      const id = cellId(neighbor.row, neighbor.col);
+      if (visited.has(id)) continue;
+      const nextDistance = (distance.get(current.id) ?? 0) + 1;
+      if (nextDistance >= (distance.get(id) ?? Number.POSITIVE_INFINITY)) continue;
+      distance.set(id, nextDistance);
+      cameFrom.set(id, current.id);
+      pushOpen(id, nextDistance + heuristic(cells, id, grid.targetId));
+    }
+    trimOpenSet();
+  }
+
+  events.push({ type: "miss" }, { type: "clearHighlights" });
+  return events;
+};
+
 export const greedyBestFirstSearch = (grid: GridSnapshot): SearchEvent[] => {
   const events: SearchEvent[] = [];
   const cells = cellMap(grid);
@@ -554,6 +712,8 @@ export const algorithms: AlgorithmDefinition[] = [
   { id: "dijkstra", label: "Dijkstra", search: dijkstraSearch },
   { id: "astar", label: "A*", search: aStarSearch },
   { id: "weighted-astar", label: "Weighted A* (w=2)", search: weightedAStarSearch },
+  { id: "ara-star", label: "Anytime Repairing A* (ARA*)", search: anytimeRepairingAStarSearch },
+  { id: "sma-star", label: "SMA* (512-node memory)", search: simplifiedMemoryBoundedAStarSearch },
   { id: "greedy", label: "Greedy Best-First Search", search: greedyBestFirstSearch },
   { id: "beam", label: "Beam Search", search: beamSearch },
 ];
