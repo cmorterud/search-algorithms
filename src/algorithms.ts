@@ -431,7 +431,7 @@ export const dijkstraSearch = (grid: GridSnapshot): SearchEvent[] => {
   return finish(events, cameFrom, grid.startId, grid.targetId);
 };
 
-export const aStarSearch = (grid: GridSnapshot): SearchEvent[] => {
+const aStarSearchWithWeight = (grid: GridSnapshot, heuristicWeight: number): SearchEvent[] => {
   const events: SearchEvent[] = [];
   const cells = cellMap(grid);
   const queue = new MinPriorityQueue();
@@ -470,13 +470,19 @@ export const aStarSearch = (grid: GridSnapshot): SearchEvent[] => {
       enqueueFrontier(events, frontier, id);
       queue.push({
         id,
-        priority: nextDistance + heuristic(cells, id, grid.targetId),
+        priority: nextDistance + heuristicWeight * heuristic(cells, id, grid.targetId),
       });
     });
   }
 
   return finish(events, cameFrom, grid.startId, grid.targetId);
 };
+
+export const aStarSearch = (grid: GridSnapshot): SearchEvent[] =>
+  aStarSearchWithWeight(grid, 1);
+
+export const weightedAStarSearch = (grid: GridSnapshot): SearchEvent[] =>
+  aStarSearchWithWeight(grid, 2);
 
 export const greedyBestFirstSearch = (grid: GridSnapshot): SearchEvent[] => {
   const events: SearchEvent[] = [];
@@ -547,6 +553,7 @@ export const algorithms: AlgorithmDefinition[] = [
   { id: "dfs", label: "Depth First Search", search: depthFirstSearch },
   { id: "dijkstra", label: "Dijkstra", search: dijkstraSearch },
   { id: "astar", label: "A*", search: aStarSearch },
+  { id: "weighted-astar", label: "Weighted A* (w=2)", search: weightedAStarSearch },
   { id: "greedy", label: "Greedy Best-First Search", search: greedyBestFirstSearch },
   { id: "beam", label: "Beam Search", search: beamSearch },
 ];

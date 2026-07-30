@@ -197,7 +197,7 @@ if (isRecording) {
   if (canvas) new ResizeObserver(() => { drawCityGraph(); renderCurrentState(); }).observe(canvas);
 }
 const selectedAlgorithm = () => algorithms.find((candidate) => candidate.id === elements.algorithmSelect.value) ?? algorithms[0];
-const complexityFor = (algorithmId: string) => ({ bfs: "TC: O(V + E)", "bidirectional-bfs": "TC: O(V + E)", "bidirectional-astar": "TC: O((V + E) log V)", dfs: "TC: O(V + E)", dijkstra: "TC: O((V + E) log V)", astar: "TC: O((V + E) log V)", greedy: "TC: O((V + E) log V)", beam: "TC: O(V + BD log B)" }[algorithmId] ?? "TC: —");
+const complexityFor = (algorithmId: string) => ({ bfs: "TC: O(V + E)", "bidirectional-bfs": "TC: O(V + E)", "bidirectional-astar": "TC: O((V + E) log V)", dfs: "TC: O(V + E)", dijkstra: "TC: O((V + E) log V)", astar: "TC: O((V + E) log V)", "weighted-astar": "TC: O((V + E) log V)", greedy: "TC: O((V + E) log V)", beam: "TC: O(V + BD log B)" }[algorithmId] ?? "TC: —");
 const renderCurrentState = () => { const algorithm = selectedAlgorithm(); render(elements, state, algorithm.label, changedCellIds); changedCellIds = new Set(); elements.startButton.disabled = state.isRunning || preparingSearch; const title = optionalElement<HTMLElement>("#recording-title-display"); if (title) title.textContent = algorithm.label; const complexity = optionalElement<HTMLElement>("#recording-complexity"); if (complexity) complexity.textContent = complexityFor(elements.algorithmSelect.value); };
 const loadRecordingCity = async (requested = new URLSearchParams(window.location.search).get("city") ?? DEFAULT_RECORDING_CITY) => {
   const cityId = RECORDING_CITIES.some((city) => city.id === requested) ? requested : DEFAULT_RECORDING_CITY;
