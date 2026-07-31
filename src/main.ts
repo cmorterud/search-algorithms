@@ -106,6 +106,38 @@ algorithms.forEach((algorithm) => { const option = document.createElement("optio
 const idFor = (row: number, col: number) => `${row}:${col}`;
 const parseId = (id: string) => { const [row, col] = id.split(":").map(Number); return { row, col }; };
 interface CityGraph { name: string; source: string; nodes: { id: string; x: number; y: number }[]; edges: { from: string; to: string; weight: number }[]; }
+const largestConnectedComponent = (city: CityGraph): CityGraph => {
+  const adjacent = new Map<string, string[]>();
+  city.edges.forEach(({ from, to }) => {
+    adjacent.set(from, [...(adjacent.get(from) ?? []), to]);
+    adjacent.set(to, [...(adjacent.get(to) ?? []), from]);
+  });
+  const seen = new Set<string>();
+  let largest = new Set<string>();
+  adjacent.forEach((_, seed) => {
+    if (seen.has(seed)) return;
+    const component = new Set<string>([seed]);
+    const queue = [seed];
+    seen.add(seed);
+    while (queue.length) {
+      const current = queue.pop();
+      if (!current) continue;
+      (adjacent.get(current) ?? []).forEach((neighbor) => {
+        if (seen.has(neighbor)) return;
+        seen.add(neighbor);
+        component.add(neighbor);
+        queue.push(neighbor);
+      });
+    }
+    if (component.size > largest.size) largest = component;
+  });
+  if (largest.size === 0) return city;
+  return {
+    ...city,
+    nodes: city.nodes.filter((node) => largest.has(node.id)),
+    edges: city.edges.filter((edge) => largest.has(edge.from) && largest.has(edge.to)),
+  };
+};
 const cloneGrid = (grid: GridSnapshot): GridSnapshot => ({ ...grid, cells: grid.cells.map((cell) => ({ ...cell })) });
 const shuffle = <T>(items: T[]) => { const result = [...items]; for (let i = result.length - 1; i > 0; i -= 1) { const j = Math.floor(Math.random() * (i + 1)); [result[i], result[j]] = [result[j], result[i]]; } return result; };
 const manhattanDistance = (a: string, b: string) => { const from = parseId(a); const to = parseId(b); return Math.abs(from.row - to.row) + Math.abs(from.col - to.col); };
@@ -221,7 +253,7 @@ const loadRecordingCity = async (requested = new URLSearchParams(window.location
     ];
     let city: CityGraph | undefined;
     for (const source of [...new Set(sources)]) {
-      try { const response = await fetch(source); if (response.ok) { city = await response.json() as CityGraph; break; } } catch { /* Try the next valid app base path. */ }
+      try { const response = await fetch(source); if (response.ok) { city = largestConnectedComponent(await response.json() as CityGraph); break; } } catch { /* Try the next valid app base path. */ }
     }
     if (!city) throw new Error("City graph was not found");
     if (loadId !== cityLoadId) return;

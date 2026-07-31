@@ -340,9 +340,7 @@ h1 {
   display: grid;
   grid-template-rows: minmax(0, .16fr) minmax(0, .01fr) minmax(0, .59fr) minmax(0, .24fr);
   overflow: hidden;
-  background-color: #020407;
-  background-image: radial-gradient(circle at 20% 17%, rgba(82, 148, 255, .22) 0 1px, transparent 1.5px), radial-gradient(circle at 83% 30%, rgba(82, 148, 255, .16) 0 1px, transparent 1.5px), radial-gradient(circle at 61% 73%, rgba(255, 255, 255, .22) 0 1px, transparent 1.5px);
-  background-size: 71px 97px, 113px 79px, 137px 127px;
+  background: #020407;
 }
 
 .search-recording-header {
