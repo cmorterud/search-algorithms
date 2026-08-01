@@ -1,7 +1,9 @@
 import "./styles.css";
 import { algorithms } from "./algorithms";
+import { layoutCityGraph } from "./city-layout";
 import { render, setRecordingRoadGraph } from "./renderer";
 import { SearchSound } from "./sound";
+import type { CityGraph, CityLayoutResult } from "./city-layout";
 import type { Cell, GridSnapshot, SearchEvent, VisualizerState } from "./types";
 
 const DEFAULT_OPENINGS = 9;
@@ -70,7 +72,11 @@ if (isRecording) {
         <label class="recording-toggle"><input id="show-stats" type="checkbox" checked /> Show statistics</label>
         <label class="recording-toggle"><input id="show-result" type="checkbox" checked /> Show result</label>
         <label class="recording-toggle"><input id="enable-countdown" type="checkbox" /> 3 second countdown</label>
-        <button id="portrait-preset" type="button">Reload city layout</button>
+        <section class="recording-layout-controls" aria-label="Map layout controls">
+          <label class="control-field orientation-field"><span>Rotation <output id="rotation-value">0°</output></span><input id="rotation-slider" aria-label="Map rotation" type="range" min="-180" max="180" step="1" value="0" /></label>
+          <label class="control-field orientation-field"><span>Zoom <output id="zoom-value">1.00×</output></span><input id="zoom-slider" aria-label="Map zoom" type="range" min="0.8" max="1.3" step="0.01" value="1" /></label>
+          <button id="auto-fit-button" type="button">Auto fit map</button>
+        </section>
         <button id="replay-button" type="button">Replay scenario</button>
         <button id="fullscreen-button" type="button">Fullscreen canvas</button>
         <button id="copy-url-button" type="button">Copy recording URL</button>
@@ -98,13 +104,15 @@ const optionalElement = <T extends HTMLElement>(selector: string): T | undefined
 const elements = {
   gridContainer: getElement<HTMLElement>("#grid-container"), visitedValue: optionalElement<HTMLElement>("#visited-value") ?? document.createElement("span"), frontierValue: optionalElement<HTMLElement>("#frontier-value") ?? document.createElement("span"), pathValue: optionalElement<HTMLElement>("#path-value") ?? document.createElement("span"), targetValue: optionalElement<HTMLElement>("#target-value") ?? document.createElement("span"), algorithmValue: optionalElement<HTMLElement>("#algorithm-value") ?? document.createElement("span"),
   startButton: getElement<HTMLButtonElement>("#start-button"), pauseButton: getElement<HTMLButtonElement>("#pause-button"), resetButton: getElement<HTMLButtonElement>("#reset-button"), randomizeButton: getElement<HTMLButtonElement>("#randomize-button"), clearButton: getElement<HTMLButtonElement>("#clear-button"), algorithmSelect: getElement<HTMLSelectElement>("#algorithm-select"), densitySlider: getElement<HTMLInputElement>("#density-slider"), speedSlider: getElement<HTMLInputElement>("#speed-slider"), soundButton: getElement<HTMLButtonElement>("#sound-button"), volumeSlider: getElement<HTMLInputElement>("#volume-slider"),
-  recording: isRecording ? { algorithmName: getElement<HTMLElement>("#recording-algorithm-name"), stats: getElement<HTMLElement>("#recording-stats"), result: getElement<HTMLElement>("#recording-result") } : undefined,
+  recording: isRecording ? {
+    algorithmName: getElement<HTMLElement>("#recording-algorithm-name"), stats: getElement<HTMLElement>("#recording-stats"), result: getElement<HTMLElement>("#recording-result"),
+    rotationSlider: getElement<HTMLInputElement>("#rotation-slider"), zoomSlider: getElement<HTMLInputElement>("#zoom-slider"), autoFitButton: getElement<HTMLButtonElement>("#auto-fit-button"),
+  } : undefined,
 };
 algorithms.forEach((algorithm) => { const option = document.createElement("option"); option.value = algorithm.id; option.textContent = algorithm.label; elements.algorithmSelect.append(option); });
 
 const idFor = (row: number, col: number) => `${row}:${col}`;
 const parseId = (id: string) => { const [row, col] = id.split(":").map(Number); return { row, col }; };
-interface CityGraph { name: string; source: string; nodes: { id: string; x: number; y: number }[]; edges: { from: string; to: string; weight: number }[]; }
 const largestConnectedComponent = (city: CityGraph): CityGraph => {
   const adjacent = new Map<string, string[]>();
   city.edges.forEach(({ from, to }) => {
@@ -170,7 +178,7 @@ const createCityGrid = (): GridSnapshot => {
   const cells = Array.from({ length: rows * cols }, (_, i) => { const row = Math.floor(i / cols), col = i % cols; return { row, col, kind: streets.has(idFor(row, col)) ? "empty" as const : "wall" as const }; });
   return { rows, cols, cells: applyEndpoints(cells, startId, targetId), startId, targetId };
 };
-const createGridFromCityGraph = (city: CityGraph): GridSnapshot => {
+const createGridFromCityGraph = (city: CityGraph, startNodeId?: string, targetNodeId?: string): GridSnapshot => {
   const { rows, cols } = gridSize;
   const streets = new Set<string>();
   const nodeById = new Map(city.nodes.map((node) => [node.id, node]));
@@ -188,21 +196,24 @@ const createGridFromCityGraph = (city: CityGraph): GridSnapshot => {
     }
   };
   city.edges.forEach((edge) => { const from = nodeById.get(edge.from), to = nodeById.get(edge.to); if (from && to) carveLine(pointFor(from), pointFor(to)); });
-  const adjacent = new Map<string, string[]>();
-  city.edges.forEach(({ from, to }) => { adjacent.set(from, [...(adjacent.get(from) ?? []), to]); adjacent.set(to, [...(adjacent.get(to) ?? []), from]); });
-  const seen = new Set<string>(); let largest: string[] = [];
-  adjacent.forEach((_, seed) => { if (seen.has(seed)) return; const component: string[] = [], queue = [seed]; seen.add(seed); while (queue.length) { const current = queue.pop(); if (!current) continue; component.push(current); (adjacent.get(current) ?? []).forEach((neighbor) => { if (!seen.has(neighbor)) { seen.add(neighbor); queue.push(neighbor); } }); } if (component.length > largest.length) largest = component; });
-  const connectedNodes = largest.map((id) => nodeById.get(id)).filter((node): node is { id: string; x: number; y: number } => Boolean(node));
-  // Favor opposite, slightly inset corners while staying on one connected road component.
+  const nodes = city.nodes;
   const distanceTo = (node: { x: number; y: number }, x: number, y: number) => (node.x - x) ** 2 + (node.y - y) ** 2;
-  const startNode = connectedNodes.reduce((best, node) => distanceTo(node, .18, .78) < distanceTo(best, .18, .78) ? node : best, connectedNodes[0]);
-  const targetNode = connectedNodes.reduce((best, node) => distanceTo(node, .82, .22) < distanceTo(best, .82, .22) ? node : best, connectedNodes[0]);
+  const fallbackStart = nodes.reduce((best, node) => distanceTo(node, .5, .85) < distanceTo(best, .5, .85) ? node : best, nodes[0]);
+  const fallbackTarget = nodes.reduce((best, node) => distanceTo(node, .5, .15) < distanceTo(best, .5, .15) ? node : best, nodes[0]);
+  const startNode = nodeById.get(startNodeId ?? "") ?? fallbackStart;
+  const targetNode = nodeById.get(targetNodeId ?? "") ?? fallbackTarget;
   const startPoint = pointFor(startNode), targetPoint = pointFor(targetNode); const startId = idFor(startPoint.row, startPoint.col), targetId = idFor(targetPoint.row, targetPoint.col);
   const cells = Array.from({ length: rows * cols }, (_, i) => { const row = Math.floor(i / cols), col = i % cols; return { row, col, kind: streets.has(idFor(row, col)) ? "empty" as const : "wall" as const }; });
   return { rows, cols, cells: applyEndpoints(cells, startId, targetId), startId, targetId };
 };
 const createState = (grid: GridSnapshot): VisualizerState => ({ grid: cloneGrid(grid), originalGrid: cloneGrid(grid), events: [], currentEventIndex: 0, isRunning: false, isPaused: false, visitedCount: 0, frontierCount: 0, pathLength: 0, activeId: undefined, visitedIds: new Set(), frontierIds: new Set(), targetVisitedIds: new Set(), targetFrontierIds: new Set(), pathIds: new Set(), missed: false });
+let sourceCity: CityGraph | undefined;
 let loadedCity: CityGraph | undefined;
+let activeLayout: CityLayoutResult | undefined;
+let rotationIsAutomatic = true;
+let requestedRotation = 0;
+let requestedZoom = 1;
+let layoutTimer: number | undefined;
 let cityLoadId = 0;
 let state = createState(isRecording ? createCityGrid() : createMazeGrid(DEFAULT_OPENINGS)); let playbackTimer: number | undefined; let countdownTimer: number | undefined; let playbackStartedAt = 0; let playbackHoldUntil = 0; const sound = new SearchSound(); sound.setVolume(Number(elements.volumeSlider.value) / 100);
 const unlockSoundFromGesture = () => { if (sound.isEnabled()) void sound.unlock(); };
@@ -214,6 +225,53 @@ let preparingSearch = false;
 let pendingEvents: SearchEvent[] = [];
 let changedCellIds = new Set<string>();
 let resetSearchOverlay = false;
+const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value));
+const recordingViewportAspect = () => {
+  const visualizer = optionalElement<HTMLElement>(".recording-visualizer");
+  const bounds = visualizer?.getBoundingClientRect();
+  return bounds && bounds.width > 0 && bounds.height > 0 ? bounds.width / bounds.height : (.94 * 9) / (.68 * 16);
+};
+const syncLayoutControls = () => {
+  const recording = elements.recording;
+  if (!recording) return;
+  recording.rotationSlider.value = String(Math.round(requestedRotation));
+  recording.zoomSlider.value = requestedZoom.toFixed(2);
+  getElement<HTMLOutputElement>("#rotation-value").value = `${Math.round(requestedRotation)}°`;
+  getElement<HTMLOutputElement>("#zoom-value").value = `${requestedZoom.toFixed(2)}×`;
+};
+const updateLayoutUrl = () => {
+  const url = new URL(window.location.href);
+  if (rotationIsAutomatic) url.searchParams.delete("rotation");
+  else url.searchParams.set("rotation", String(Math.round(requestedRotation)));
+  if (Math.abs(requestedZoom - 1) < .001) url.searchParams.delete("zoom");
+  else url.searchParams.set("zoom", requestedZoom.toFixed(2));
+  window.history.replaceState(null, "", url);
+};
+const applyRecordingLayout = (updateUrl = true) => {
+  if (!sourceCity) return;
+  cancelPendingSearch(); clearPlaybackTimer(); sound.stopHum();
+  const layout = layoutCityGraph(sourceCity, {
+    rotation: rotationIsAutomatic ? undefined : requestedRotation,
+    zoom: requestedZoom,
+    viewportAspect: recordingViewportAspect(),
+  });
+  activeLayout = layout;
+  loadedCity = layout.graph;
+  requestedRotation = layout.rotation;
+  requestedZoom = layout.zoom;
+  setRecordingRoadGraph(layout.graph);
+  state = createState(createGridFromCityGraph(layout.graph, layout.startNodeId, layout.targetNodeId));
+  resetSearchOverlay = true;
+  syncLayoutControls();
+  if (updateUrl) updateLayoutUrl();
+  window.requestAnimationFrame(drawCityGraph);
+  renderCurrentState();
+};
+const scheduleRecordingLayout = (flush = false) => {
+  if (layoutTimer !== undefined) window.clearTimeout(layoutTimer);
+  if (flush) { layoutTimer = undefined; applyRecordingLayout(); return; }
+  layoutTimer = window.setTimeout(() => { layoutTimer = undefined; applyRecordingLayout(); }, 150);
+};
 const drawCityGraph = () => {
   const canvas = optionalElement<HTMLCanvasElement>("#city-graph-canvas"); if (!canvas || !loadedCity) return;
   const bounds = canvas.getBoundingClientRect(), pixelRatio = window.devicePixelRatio || 1;
@@ -231,7 +289,7 @@ if (isRecording) {
 }
 const selectedAlgorithm = () => algorithms.find((candidate) => candidate.id === elements.algorithmSelect.value) ?? algorithms[0];
 const complexityFor = (algorithmId: string) => ({ bfs: "TC: O(V + E)", "bidirectional-bfs": "TC: O(V + E)", "bidirectional-astar": "TC: O((V + E) log V)", dfs: "TC: O(V + E)", dijkstra: "TC: O((V + E) log V)", astar: "TC: O((V + E) log V)", "weighted-astar": "TC: O((V + E) log V)", "ara-star": "TC: O(k(V + E) log V)", "sma-star": "TC: O(b^d)  SC: O(M)", greedy: "TC: O((V + E) log V)", beam: "TC: O(V + BD log B)" }[algorithmId] ?? "TC: —");
-const renderCurrentState = () => { const algorithm = selectedAlgorithm(); render(elements, state, algorithm.label, changedCellIds, resetSearchOverlay); changedCellIds = new Set(); resetSearchOverlay = false; elements.startButton.disabled = state.isRunning || preparingSearch; const title = optionalElement<HTMLElement>("#recording-title-display"); if (title) title.textContent = algorithm.label; const complexity = optionalElement<HTMLElement>("#recording-complexity"); if (complexity) complexity.textContent = complexityFor(elements.algorithmSelect.value); };
+const renderCurrentState = () => { const algorithm = selectedAlgorithm(); render(elements, state, algorithm.label, changedCellIds, resetSearchOverlay); changedCellIds = new Set(); resetSearchOverlay = false; elements.startButton.disabled = state.isRunning || preparingSearch; if (elements.recording) { elements.recording.rotationSlider.disabled = state.isRunning || preparingSearch; elements.recording.zoomSlider.disabled = state.isRunning || preparingSearch; elements.recording.autoFitButton.disabled = state.isRunning || preparingSearch; } const title = optionalElement<HTMLElement>("#recording-title-display"); if (title) title.textContent = algorithm.label; const complexity = optionalElement<HTMLElement>("#recording-complexity"); if (complexity) complexity.textContent = complexityFor(elements.algorithmSelect.value); };
 const loadRecordingCity = async (requested = new URLSearchParams(window.location.search).get("city") ?? DEFAULT_RECORDING_CITY) => {
   const cityId = RECORDING_CITIES.some((city) => city.id === requested) ? requested : DEFAULT_RECORDING_CITY;
   const cityLabel = RECORDING_CITIES.find((city) => city.id === cityId)?.label ?? "City";
@@ -240,6 +298,8 @@ const loadRecordingCity = async (requested = new URLSearchParams(window.location
   if (citySelect) { citySelect.value = cityId; citySelect.disabled = true; }
   const label = optionalElement<HTMLElement>("#recording-city-label");
   if (label) label.textContent = `LOADING ${cityLabel.toUpperCase()}`;
+  if (layoutTimer !== undefined) { window.clearTimeout(layoutTimer); layoutTimer = undefined; }
+  sourceCity = undefined; loadedCity = undefined; activeLayout = undefined;
   setRecordingRoadGraph(undefined);
   cancelPendingSearch(); clearPlaybackTimer(); sound.stopHum(); state.isRunning = false; state.isPaused = false; renderCurrentState();
   try {
@@ -256,12 +316,16 @@ const loadRecordingCity = async (requested = new URLSearchParams(window.location
     }
     if (!city) throw new Error("City graph was not found");
     if (loadId !== cityLoadId) return;
-    loadedCity = city;
-    setRecordingRoadGraph(city);
-    state = createState(createGridFromCityGraph(city));
+    sourceCity = city;
+    const url = new URL(window.location.href);
+    const urlRotation = Number(url.searchParams.get("rotation"));
+    const urlZoom = Number(url.searchParams.get("zoom"));
+    rotationIsAutomatic = !url.searchParams.has("rotation") || !Number.isFinite(urlRotation);
+    requestedRotation = rotationIsAutomatic ? 0 : clamp(urlRotation, -180, 180);
+    requestedZoom = url.searchParams.has("zoom") && Number.isFinite(urlZoom) ? clamp(urlZoom, .8, 1.3) : 1;
+    applyRecordingLayout();
     if (label) label.textContent = cityLabel.toUpperCase();
     if (citySelect) citySelect.disabled = false;
-    window.requestAnimationFrame(drawCityGraph);
     renderCurrentState();
   } catch (error) {
     if (loadId !== cityLoadId) return;
@@ -279,15 +343,20 @@ const startPlayback = (events: SearchEvent[]) => { state.events = events; state.
 const beginRun = () => { if (preparingSearch || state.isRunning) return; void sound.unlock(); state.originalGrid = cloneGrid(state.grid); const id = ++searchJobId; pendingEvents = []; preparingSearch = true; renderCurrentState(); searchWorker.postMessage({ id, algorithmId: selectedAlgorithm().id, grid: cloneGrid(state.grid) }); };
 searchWorker.addEventListener("message", ({ data }: MessageEvent<{ type: "events" | "complete" | "error"; id: number; events?: SearchEvent[] }>) => { if (data.id !== searchJobId) return; if (data.type === "events" && data.events) { pendingEvents.push(...data.events); return; } preparingSearch = false; if (data.type === "complete") startPlayback(pendingEvents); else renderCurrentState(); });
 const resetRun = () => { cancelPendingSearch(); clearPlaybackTimer(); sound.stopHum(); state = createState(state.originalGrid); renderCurrentState(); };
-const randomize = () => { cancelPendingSearch(); clearPlaybackTimer(); sound.stopHum(); state = createState(isRecording ? (loadedCity ? createGridFromCityGraph(loadedCity) : createCityGrid()) : createMazeGrid(Number(elements.densitySlider.value))); renderCurrentState(); };
+const randomize = () => { cancelPendingSearch(); clearPlaybackTimer(); sound.stopHum(); state = createState(isRecording ? (loadedCity ? createGridFromCityGraph(loadedCity, activeLayout?.startNodeId, activeLayout?.targetNodeId) : createCityGrid()) : createMazeGrid(Number(elements.densitySlider.value))); renderCurrentState(); };
 const clearGrid = () => { cancelPendingSearch(); clearPlaybackTimer(); sound.stopHum(); state = createState(createOpenGrid()); renderCurrentState(); };
 const cycleCellKind = (id: string) => { if (state.isRunning || preparingSearch) return; const grid = cloneGrid(state.grid); const cell = grid.cells.find((candidate) => idFor(candidate.row, candidate.col) === id); if (!cell || cell.kind === "start" || cell.kind === "target") return; cell.kind = cell.kind === "empty" ? "wall" : "empty"; state = createState(grid); renderCurrentState(); };
 elements.startButton.addEventListener("click", beginRun); elements.pauseButton.addEventListener("click", () => { if (!state.isRunning) return; state.isPaused = !state.isPaused; if (state.isPaused) sound.stopHum(); renderCurrentState(); if (!state.isPaused) playNextEvent(); }); elements.resetButton.addEventListener("click", resetRun); elements.randomizeButton.addEventListener("click", randomize); elements.clearButton.addEventListener("click", clearGrid); elements.algorithmSelect.addEventListener("change", renderCurrentState); elements.densitySlider.addEventListener("input", randomize); elements.gridContainer.addEventListener("click", (event) => { const target = event.target; if (target instanceof HTMLElement && target.dataset.id) cycleCellKind(target.dataset.id); }); elements.soundButton.addEventListener("click", () => { const enabled = !sound.isEnabled(); sound.setEnabled(enabled); if (!enabled) sound.stopHum(); elements.soundButton.textContent = enabled ? "Sound On" : "Sound Off"; elements.soundButton.setAttribute("aria-pressed", String(enabled)); if (enabled) void sound.unlock(); }); elements.volumeSlider.addEventListener("input", () => sound.setVolume(Number(elements.volumeSlider.value) / 100));
 if (isRecording) {
-  const city = getElement<HTMLSelectElement>("#recording-city-select"), title = getElement<HTMLInputElement>("#recording-title"), subtitle = getElement<HTMLInputElement>("#recording-subtitle"), titleDisplay = getElement<HTMLElement>("#recording-title-display"), subtitleDisplay = getElement<HTMLElement>("#recording-subtitle-display"), algorithm = getElement<HTMLInputElement>("#show-algorithm"), stats = getElement<HTMLInputElement>("#show-stats"), result = getElement<HTMLInputElement>("#show-result"), countdown = getElement<HTMLInputElement>("#enable-countdown"), countdownDisplay = getElement<HTMLElement>("#recording-countdown");
-  city.addEventListener("change", () => { const url = new URL(window.location.href); url.searchParams.set("city", city.value); window.history.replaceState(null, "", url); void loadRecordingCity(city.value); });
+  const city = getElement<HTMLSelectElement>("#recording-city-select"), title = getElement<HTMLInputElement>("#recording-title"), subtitle = getElement<HTMLInputElement>("#recording-subtitle"), titleDisplay = getElement<HTMLElement>("#recording-title-display"), subtitleDisplay = getElement<HTMLElement>("#recording-subtitle-display"), algorithm = getElement<HTMLInputElement>("#show-algorithm"), stats = getElement<HTMLInputElement>("#show-stats"), result = getElement<HTMLInputElement>("#show-result"), countdown = getElement<HTMLInputElement>("#enable-countdown"), countdownDisplay = getElement<HTMLElement>("#recording-countdown"), rotation = getElement<HTMLInputElement>("#rotation-slider"), zoom = getElement<HTMLInputElement>("#zoom-slider");
+  city.addEventListener("change", () => { const url = new URL(window.location.href); url.searchParams.set("city", city.value); url.searchParams.delete("rotation"); url.searchParams.delete("zoom"); window.history.replaceState(null, "", url); rotationIsAutomatic = true; requestedZoom = 1; void loadRecordingCity(city.value); });
   title.addEventListener("input", () => titleDisplay.textContent = title.value || "How Search Finds a Path"); subtitle.addEventListener("input", () => subtitleDisplay.textContent = subtitle.value); algorithm.addEventListener("change", () => elements.recording?.algorithmName.toggleAttribute("hidden", !algorithm.checked)); stats.addEventListener("change", () => elements.recording?.stats.toggleAttribute("hidden", !stats.checked)); result.addEventListener("change", () => elements.recording?.result.toggleAttribute("hidden", !result.checked));
-  getElement<HTMLButtonElement>("#portrait-preset").addEventListener("click", () => { gridSize = PORTRAIT_SIZE; randomize(); }); getElement<HTMLButtonElement>("#replay-button").addEventListener("click", () => { resetRun(); beginRun(); }); getElement<HTMLButtonElement>("#fullscreen-button").addEventListener("click", () => void getElement<HTMLElement>("#recording-preview").requestFullscreen?.()); getElement<HTMLButtonElement>("#copy-url-button").addEventListener("click", async (event) => { await navigator.clipboard?.writeText(window.location.href); (event.currentTarget as HTMLButtonElement).textContent = "Recording URL copied"; });
+  rotation.addEventListener("input", () => { rotationIsAutomatic = false; requestedRotation = Number(rotation.value); syncLayoutControls(); scheduleRecordingLayout(); });
+  rotation.addEventListener("change", () => scheduleRecordingLayout(true));
+  zoom.addEventListener("input", () => { requestedZoom = Number(zoom.value); syncLayoutControls(); scheduleRecordingLayout(); });
+  zoom.addEventListener("change", () => scheduleRecordingLayout(true));
+  getElement<HTMLButtonElement>("#auto-fit-button").addEventListener("click", () => { rotationIsAutomatic = true; requestedZoom = 1; applyRecordingLayout(); });
+  getElement<HTMLButtonElement>("#replay-button").addEventListener("click", () => { resetRun(); beginRun(); }); getElement<HTMLButtonElement>("#fullscreen-button").addEventListener("click", () => void getElement<HTMLElement>("#recording-preview").requestFullscreen?.()); getElement<HTMLButtonElement>("#copy-url-button").addEventListener("click", async (event) => { await navigator.clipboard?.writeText(window.location.href); (event.currentTarget as HTMLButtonElement).textContent = "Recording URL copied"; });
   elements.startButton.addEventListener("click", (event) => { if (!countdown.checked || state.isRunning || preparingSearch) return; event.stopImmediatePropagation(); if (countdownTimer) window.clearInterval(countdownTimer); let seconds = 3; countdownDisplay.hidden = false; countdownDisplay.textContent = String(seconds); countdownTimer = window.setInterval(() => { seconds -= 1; countdownDisplay.textContent = seconds ? String(seconds) : "Go"; if (seconds < 0) { window.clearInterval(countdownTimer); countdownDisplay.hidden = true; beginRun(); } }, 1000); }, { capture: true });
 }
 renderCurrentState();

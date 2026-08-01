@@ -1,4 +1,5 @@
 import type { Cell, GridSnapshot, VisualizerState } from "./types";
+import type { CityGraph } from "./city-layout";
 
 interface RenderElements {
   gridContainer: HTMLElement;
@@ -18,12 +19,10 @@ interface RenderElements {
     algorithmName: HTMLElement;
     stats: HTMLElement;
     result: HTMLElement;
+    rotationSlider: HTMLInputElement;
+    zoomSlider: HTMLInputElement;
+    autoFitButton: HTMLButtonElement;
   };
-}
-
-interface RecordingRoadGraph {
-  nodes: { id: string; x: number; y: number }[];
-  edges: { from: string; to: string }[];
 }
 
 interface RecordingRoadIndex {
@@ -36,10 +35,10 @@ interface RecordingRoadIndex {
 const cellId = (cell: Cell): string => `${cell.row}:${cell.col}`;
 let renderedGrid: GridSnapshot | undefined;
 const tilesById = new Map<string, HTMLElement>();
-let recordingRoadGraph: RecordingRoadGraph | undefined;
+let recordingRoadGraph: CityGraph | undefined;
 let recordingRoadIndex: RecordingRoadIndex | undefined;
 
-export const setRecordingRoadGraph = (graph: RecordingRoadGraph | undefined): void => {
+export const setRecordingRoadGraph = (graph: CityGraph | undefined): void => {
   recordingRoadGraph = graph;
   recordingRoadIndex = undefined;
 };
@@ -255,6 +254,9 @@ export const render = (
   elements.algorithmValue.textContent = algorithmLabel;
 
   if (elements.recording) {
+    elements.recording.rotationSlider.disabled = state.isRunning;
+    elements.recording.zoomSlider.disabled = state.isRunning;
+    elements.recording.autoFitButton.disabled = state.isRunning;
     elements.recording.algorithmName.textContent = algorithmLabel;
     elements.recording.stats.textContent = `Nodes: ${state.visitedCount.toLocaleString()}   Time: ${(state.currentEventIndex / 120).toFixed(1)} ms`;
     elements.recording.result.textContent = state.missed

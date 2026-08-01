@@ -334,7 +334,7 @@ h1 {
   width: 100%;
   height: 100%;
   display: grid;
-  grid-template-rows: minmax(0, .16fr) minmax(0, .01fr) minmax(0, .59fr) minmax(0, .24fr);
+  grid-template-rows: minmax(0, .16fr) minmax(0, .01fr) minmax(0, .68fr) minmax(0, .15fr);
   overflow: hidden;
   background: #020407;
 }
@@ -445,6 +445,12 @@ h1 {
 .recording-panel h2 { margin: 0 0 2px; font-size: 1.1rem; }
 .recording-panel .control-field { color: #d6dce2; }
 .recording-panel input:not([type="range"]), .recording-panel select { width: 100%; min-height: 42px; border: 1px solid #52616d; border-radius: 8px; padding: 0 10px; background: #fff; color: #18202a; }
+.recording-layout-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; border-block: 1px solid #29323a; padding-block: 12px; }
+.recording-layout-controls .orientation-field { min-width: 0; }
+.recording-layout-controls .orientation-field > span { display: flex; justify-content: space-between; gap: 8px; }
+.recording-layout-controls output { color: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.recording-layout-controls input[type="range"] { width: 100%; }
+.recording-layout-controls button { grid-column: 1 / -1; }
 .recording-toggle { display: flex; gap: 9px; align-items: center; color: #d6dce2; font-size: .9rem; font-weight: 700; }
 .search-recording-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .search-recording-controls .algorithm-field, .search-recording-controls .compact-field { min-width: 0; }
