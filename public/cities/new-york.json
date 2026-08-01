@@ -1,6 +1,10 @@
 {
     "name": "Manhattan, New York County, New York, United States",
     "source": "© OpenStreetMap contributors",
+    "metersPerUnit": {
+        "x": 11779.016361311225,
+        "y": 21802.524056112685
+    },
     "nodes": [
         {
             "id": "4205830390",

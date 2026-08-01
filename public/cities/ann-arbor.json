@@ -1,6 +1,10 @@
 {
     "name": "Ann Arbor, Washtenaw County, Michigan, United States",
     "source": "© OpenStreetMap contributors",
+    "metersPerUnit": {
+        "x": 10173.269722094275,
+        "y": 11227.395914109522
+    },
     "nodes": [
         {
             "id": "69907839",
