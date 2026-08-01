@@ -344,7 +344,7 @@ h1 {
   align-items: start;
   justify-content: space-between;
   gap: 1rem;
-  padding: var(--safe-top) 9% 1%;
+  padding: var(--safe-top) 12% 1%;
   text-align: left;
   position: relative;
   z-index: 2;
