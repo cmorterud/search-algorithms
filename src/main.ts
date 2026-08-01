@@ -17,6 +17,7 @@ const RECORDING_CITIES = [
   { id: "washington-dc", label: "Washington, DC" },
   { id: "seattle", label: "Seattle" },
   { id: "barcelona", label: "Barcelona" },
+  { id: "new-york", label: "New York" },
 ] as const;
 const DEFAULT_RECORDING_CITY = RECORDING_CITIES[0].id;
 let gridSize = isRecording ? PORTRAIT_SIZE : STANDARD_SIZE;
