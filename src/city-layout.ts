@@ -13,6 +13,10 @@ export interface CityEdge {
 export interface CityGraph {
   name: string;
   source: string;
+  metersPerUnit?: {
+    x: number;
+    y: number;
+  };
   nodes: CityNode[];
   edges: CityEdge[];
 }
@@ -34,6 +38,50 @@ export interface CityLayoutResult {
 }
 
 const degreesToRadians = (degrees: number): number => degrees * Math.PI / 180;
+
+interface CoordinateScale {
+  x: number;
+  y: number;
+}
+
+const coordinateScaleCache = new WeakMap<CityGraph, CoordinateScale>();
+
+const validCoordinateScale = (scale: CoordinateScale | undefined): scale is CoordinateScale =>
+  Boolean(scale && Number.isFinite(scale.x) && scale.x > 0 && Number.isFinite(scale.y) && scale.y > 0);
+
+const inferCoordinateScale = (city: CityGraph): CoordinateScale => {
+  const nodesById = new Map(city.nodes.map((node) => [node.id, node]));
+  let xx = 0, xy = 0, yy = 0, xWeight = 0, yWeight = 0;
+  city.edges.forEach((edge) => {
+    const from = nodesById.get(edge.from), to = nodesById.get(edge.to);
+    if (!from || !to || !Number.isFinite(edge.weight) || edge.weight <= 0) return;
+    const deltaXSquared = (to.x - from.x) ** 2;
+    const deltaYSquared = (to.y - from.y) ** 2;
+    const weightSquared = edge.weight ** 2;
+    if (![deltaXSquared, deltaYSquared, weightSquared].every(Number.isFinite)) return;
+    xx += deltaXSquared ** 2;
+    xy += deltaXSquared * deltaYSquared;
+    yy += deltaYSquared ** 2;
+    xWeight += deltaXSquared * weightSquared;
+    yWeight += deltaYSquared * weightSquared;
+  });
+  const determinant = xx * yy - xy ** 2;
+  const determinantTolerance = Number.EPSILON * xx * yy * 32;
+  if (xx <= 0 || yy <= 0 || !Number.isFinite(determinant) || determinant <= determinantTolerance) return { x: 1, y: 1 };
+  const xSquared = (xWeight * yy - yWeight * xy) / determinant;
+  const ySquared = (yWeight * xx - xWeight * xy) / determinant;
+  const inferred = { x: Math.sqrt(xSquared), y: Math.sqrt(ySquared) };
+  return validCoordinateScale(inferred) ? inferred : { x: 1, y: 1 };
+};
+
+const coordinateScaleFor = (city: CityGraph): CoordinateScale => {
+  if (validCoordinateScale(city.metersPerUnit)) return city.metersPerUnit;
+  const cached = coordinateScaleCache.get(city);
+  if (cached) return cached;
+  const inferred = inferCoordinateScale(city);
+  coordinateScaleCache.set(city, inferred);
+  return inferred;
+};
 
 const normalizePortraitRotation = (degrees: number): number => {
   let normalized = degrees;
@@ -75,16 +123,18 @@ const nearestEndpoint = (
 
 export const layoutCityGraph = (city: CityGraph, options: CityLayoutOptions): CityLayoutResult => {
   if (city.nodes.length === 0) throw new Error("City graph has no nodes");
-  const automaticRotation = automaticPortraitRotation(city.nodes);
+  const coordinateScale = coordinateScaleFor(city);
+  const metricNodes = city.nodes.map((node) => ({ ...node, x: node.x * coordinateScale.x, y: node.y * coordinateScale.y }));
+  const automaticRotation = automaticPortraitRotation(metricNodes);
   const rotation = Number.isFinite(options.rotation) ? options.rotation! : automaticRotation;
   const zoom = Math.min(1.3, Math.max(.8, options.zoom));
   const aspect = Math.max(.1, options.viewportAspect);
   const padding = Math.min(.2, Math.max(0, options.padding ?? .05));
-  const center = city.nodes.reduce((sum, node) => ({ x: sum.x + node.x, y: sum.y + node.y }), { x: 0, y: 0 });
-  center.x /= city.nodes.length;
-  center.y /= city.nodes.length;
+  const center = metricNodes.reduce((sum, node) => ({ x: sum.x + node.x, y: sum.y + node.y }), { x: 0, y: 0 });
+  center.x /= metricNodes.length;
+  center.y /= metricNodes.length;
   const radians = degreesToRadians(rotation), cosine = Math.cos(radians), sine = Math.sin(radians);
-  const rotated = city.nodes.map((node) => {
+  const rotated = metricNodes.map((node) => {
     const x = node.x - center.x, y = node.y - center.y;
     return { ...node, x: cosine * x - sine * y, y: sine * x + cosine * y };
   });

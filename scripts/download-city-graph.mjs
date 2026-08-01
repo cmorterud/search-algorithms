@@ -118,7 +118,12 @@ const nodes = [...usedNodeIds].map((id) => {
   const [lon, lat] = coordinates.get(Number(id));
   return { id, x: (lon - minLon) / (maxLon - minLon || 1), y: 1 - (lat - minLat) / (maxLat - minLat || 1) };
 });
-const graph = { name: location.display_name, source: "© OpenStreetMap contributors", nodes, edges };
+const referenceLon = (minLon + maxLon) / 2, referenceLat = (minLat + maxLat) / 2;
+const metersPerUnit = {
+  x: metersBetween([minLon, referenceLat], [maxLon, referenceLat]),
+  y: metersBetween([referenceLon, minLat], [referenceLon, maxLat]),
+};
+const graph = { name: location.display_name, source: "© OpenStreetMap contributors", metersPerUnit, nodes, edges };
 await mkdir(dirname(output), { recursive: true });
 await writeFile(output, `${JSON.stringify(graph)}\n`);
 console.log(`Saved ${nodes.length.toLocaleString()} nodes and ${edges.length.toLocaleString()} street segments to ${output}`);
