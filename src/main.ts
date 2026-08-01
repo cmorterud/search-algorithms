@@ -1,8 +1,9 @@
 import "./styles.css";
 import { algorithms } from "./algorithms";
 import { layoutCityGraph } from "./city-layout";
+import { buildRecordingTimeline, DEFAULT_RECORDING_SPEED, DEFAULT_RECORDING_VOLUME, parseRecordingConfig, playbackBatchSize, type RecordingRenderMetadata, type RecordingTimeline } from "./recording";
 import { render, setRecordingRoadGraph } from "./renderer";
-import { SearchSound } from "./sound";
+import { renderRecordingSoundtrack, SearchSound } from "./sound";
 import type { CityGraph, CityLayoutResult } from "./city-layout";
 import type { Cell, GridSnapshot, SearchEvent, VisualizerState } from "./types";
 
@@ -22,6 +23,12 @@ const RECORDING_CITIES = [
   { id: "new-york", label: "New York" },
 ] as const;
 const DEFAULT_RECORDING_CITY = RECORDING_CITIES[0].id;
+const recordingConfig = isRecording ? parseRecordingConfig(
+  window.location.href,
+  RECORDING_CITIES.map(({ id }) => id),
+  algorithms.map(({ id }) => id),
+) : undefined;
+if (recordingConfig?.render) document.documentElement.dataset.recordingRender = "true";
 let gridSize = isRecording ? PORTRAIT_SIZE : STANDARD_SIZE;
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -36,9 +43,9 @@ const controls = `
     <button id="reset-button" type="button">Reset</button>
     <label class="control-field algorithm-field">Algorithm<select id="algorithm-select"></select></label>
     <label class="control-field compact-field">Openings<input id="density-slider" type="range" min="0" max="28" value="${DEFAULT_OPENINGS}" /></label>
-    <label class="control-field compact-field">Speed<input id="speed-slider" type="range" min="1" max="100" value="58" /></label>
+    <label class="control-field compact-field">Speed<input id="speed-slider" type="range" min="1" max="100" value="${recordingConfig?.speed ?? DEFAULT_RECORDING_SPEED}" /></label>
     <button id="sound-button" type="button" aria-pressed="true">Sound On</button>
-    <label class="control-field compact-field">Volume<input id="volume-slider" type="range" min="0" max="100" value="42" /></label>
+    <label class="control-field compact-field">Volume<input id="volume-slider" type="range" min="0" max="100" value="${recordingConfig?.volume ?? DEFAULT_RECORDING_VOLUME}" /></label>
   </section>`;
 
 if (isRecording) {
@@ -66,9 +73,9 @@ if (isRecording) {
       <aside class="recording-panel" aria-label="Recording controls">
         <h2>Recording controls</h2>
         <label class="control-field">City<select id="recording-city-select">${RECORDING_CITIES.map((city) => `<option value="${city.id}">${city.label}</option>`).join("")}</select></label>
-        <label class="recording-toggle"><input id="show-algorithm" type="checkbox" checked /> Show algorithm name</label>
-        <label class="recording-toggle"><input id="show-stats" type="checkbox" checked /> Show statistics</label>
-        <label class="recording-toggle"><input id="show-result" type="checkbox" checked /> Show result</label>
+        <label class="recording-toggle"><input id="show-algorithm" type="checkbox" ${recordingConfig?.showAlgorithm === false ? "" : "checked"} /> Show algorithm name</label>
+        <label class="recording-toggle"><input id="show-stats" type="checkbox" ${recordingConfig?.showStats === false ? "" : "checked"} /> Show statistics</label>
+        <label class="recording-toggle"><input id="show-result" type="checkbox" ${recordingConfig?.showResult === false ? "" : "checked"} /> Show result</label>
         <label class="recording-toggle"><input id="enable-countdown" type="checkbox" /> 3 second countdown</label>
         <section class="recording-layout-controls" aria-label="Map layout controls">
           <label class="control-field orientation-field"><span>Rotation <output id="rotation-value">0°</output></span><input id="rotation-slider" aria-label="Map rotation" type="range" min="-180" max="180" step="1" value="0" /></label>
@@ -108,6 +115,13 @@ const elements = {
   } : undefined,
 };
 algorithms.forEach((algorithm) => { const option = document.createElement("option"); option.value = algorithm.id; option.textContent = algorithm.label; elements.algorithmSelect.append(option); });
+if (recordingConfig) {
+  elements.algorithmSelect.value = recordingConfig.algorithm;
+  elements.recording?.algorithmName.toggleAttribute("hidden", !recordingConfig.showAlgorithm);
+  optionalElement<HTMLElement>("#recording-title-display")?.toggleAttribute("hidden", !recordingConfig.showAlgorithm);
+  elements.recording?.stats.toggleAttribute("hidden", !recordingConfig.showStats);
+  elements.recording?.result.toggleAttribute("hidden", !recordingConfig.showResult);
+}
 
 const idFor = (row: number, col: number) => `${row}:${col}`;
 const parseId = (id: string) => { const [row, col] = id.split(":").map(Number); return { row, col }; };
@@ -213,7 +227,7 @@ let requestedRotation = 0;
 let requestedZoom = 1;
 let layoutTimer: number | undefined;
 let cityLoadId = 0;
-let state = createState(isRecording ? createCityGrid() : createMazeGrid(DEFAULT_OPENINGS)); let playbackTimer: number | undefined; let countdownTimer: number | undefined; let playbackStartedAt = 0; let playbackHoldUntil = 0; const sound = new SearchSound(); sound.setVolume(Number(elements.volumeSlider.value) / 100);
+let state = createState(isRecording ? createCityGrid() : createMazeGrid(DEFAULT_OPENINGS)); let playbackTimer: number | undefined; let countdownTimer: number | undefined; let playbackStartedAt = 0; let playbackHoldUntil = 0; let recordingLoadPromise: Promise<void> = Promise.resolve(); const sound = new SearchSound(); sound.setVolume(Number(elements.volumeSlider.value) / 100);
 const unlockSoundFromGesture = () => { if (sound.isEnabled()) void sound.unlock(); };
 if ("PointerEvent" in window) document.addEventListener("pointerdown", unlockSoundFromGesture, { capture: true, passive: true });
 else document.addEventListener("touchstart", unlockSoundFromGesture, { capture: true, passive: true });
@@ -288,7 +302,7 @@ if (isRecording) {
 const selectedAlgorithm = () => algorithms.find((candidate) => candidate.id === elements.algorithmSelect.value) ?? algorithms[0];
 const complexityFor = (algorithmId: string) => ({ bfs: "TC: O(V + E)", "bidirectional-bfs": "TC: O(V + E)", "bidirectional-astar": "TC: O((V + E) log V)", dfs: "TC: O(V + E)", dijkstra: "TC: O((V + E) log V)", astar: "TC: O((V + E) log V)", "weighted-astar": "TC: O((V + E) log V)", "ara-star": "TC: O(k(V + E) log V)", "sma-star": "TC: O(b^d)  SC: O(M)", greedy: "TC: O((V + E) log V)", beam: "TC: O(V + BD log B)" }[algorithmId] ?? "TC: —");
 const renderCurrentState = () => { const algorithm = selectedAlgorithm(); render(elements, state, algorithm.label, changedCellIds, resetSearchOverlay); changedCellIds = new Set(); resetSearchOverlay = false; elements.startButton.disabled = state.isRunning || preparingSearch; if (elements.recording) { elements.recording.rotationSlider.disabled = state.isRunning || preparingSearch; elements.recording.zoomSlider.disabled = state.isRunning || preparingSearch; elements.recording.autoFitButton.disabled = state.isRunning || preparingSearch; } const title = optionalElement<HTMLElement>("#recording-title-display"); if (title) title.textContent = algorithm.label; const complexity = optionalElement<HTMLElement>("#recording-complexity"); if (complexity) complexity.textContent = complexityFor(elements.algorithmSelect.value); };
-const loadRecordingCity = async (requested = new URLSearchParams(window.location.search).get("city") ?? DEFAULT_RECORDING_CITY) => {
+const loadRecordingCity = async (requested = recordingConfig?.city ?? new URLSearchParams(window.location.search).get("city") ?? DEFAULT_RECORDING_CITY) => {
   const cityId = RECORDING_CITIES.some((city) => city.id === requested) ? requested : DEFAULT_RECORDING_CITY;
   const cityLabel = RECORDING_CITIES.find((city) => city.id === cityId)?.label ?? "City";
   const loadId = ++cityLoadId;
@@ -330,16 +344,101 @@ const loadRecordingCity = async (requested = new URLSearchParams(window.location
     if (label) label.textContent = "CITY DATA UNAVAILABLE";
     if (citySelect) citySelect.disabled = false;
     console.warn("Using the generated city fallback.", error);
+    if (recordingConfig?.render) throw error;
   }
 };
 const clearPlaybackTimer = () => { if (playbackTimer !== undefined) { window.cancelAnimationFrame(playbackTimer); playbackTimer = undefined; } };
-const applyEvent = (event: SearchEvent, audible = true) => { if (state.activeId) changedCellIds.add(state.activeId); state.activeId = undefined; if (audible || event.type === "path" || event.type === "miss") sound.playEvent(event, state.currentEventIndex / Math.max(1, state.events.length - 1)); if (event.type === "frontier") { const visited = event.side === "target" ? state.targetVisitedIds : state.visitedIds, frontier = event.side === "target" ? state.targetFrontierIds : state.frontierIds; if (!visited.has(event.id) && !frontier.has(event.id)) { frontier.add(event.id); changedCellIds.add(event.id); state.frontierCount += 1; } } else if (event.type === "visit") { const visited = event.side === "target" ? state.targetVisitedIds : state.visitedIds, frontier = event.side === "target" ? state.targetFrontierIds : state.frontierIds; state.activeId = event.id; changedCellIds.add(event.id); frontier.delete(event.id); if (!visited.has(event.id)) { visited.add(event.id); state.visitedCount += 1; } } else if (event.type === "restart") { [...state.visitedIds, ...state.frontierIds, ...state.targetVisitedIds, ...state.targetFrontierIds, ...state.pathIds].forEach((id) => changedCellIds.add(id)); state.visitedIds.clear(); state.frontierIds.clear(); state.targetVisitedIds.clear(); state.targetFrontierIds.clear(); state.pathIds.clear(); resetSearchOverlay = true; } else if (event.type === "path") { state.pathIds.forEach((id) => changedCellIds.add(id)); state.pathIds = new Set(event.ids); event.ids.forEach((id) => changedCellIds.add(id)); state.pathLength = event.ids.length; } else if (event.type === "miss") { state.missed = true; state.pathLength = 0; } };
+const applyEvent = (event: SearchEvent, audible = true, emitSound = true) => { if (state.activeId) changedCellIds.add(state.activeId); state.activeId = undefined; if (emitSound && (audible || event.type === "path" || event.type === "miss")) sound.playEvent(event, state.currentEventIndex / Math.max(1, state.events.length - 1)); if (event.type === "frontier") { const visited = event.side === "target" ? state.targetVisitedIds : state.visitedIds, frontier = event.side === "target" ? state.targetFrontierIds : state.frontierIds; if (!visited.has(event.id) && !frontier.has(event.id)) { frontier.add(event.id); changedCellIds.add(event.id); state.frontierCount += 1; } } else if (event.type === "visit") { const visited = event.side === "target" ? state.targetVisitedIds : state.visitedIds, frontier = event.side === "target" ? state.targetFrontierIds : state.frontierIds; state.activeId = event.id; changedCellIds.add(event.id); frontier.delete(event.id); if (!visited.has(event.id)) { visited.add(event.id); state.visitedCount += 1; } } else if (event.type === "restart") { [...state.visitedIds, ...state.frontierIds, ...state.targetVisitedIds, ...state.targetFrontierIds, ...state.pathIds].forEach((id) => changedCellIds.add(id)); state.visitedIds.clear(); state.frontierIds.clear(); state.targetVisitedIds.clear(); state.targetFrontierIds.clear(); state.pathIds.clear(); resetSearchOverlay = true; } else if (event.type === "path") { state.pathIds.forEach((id) => changedCellIds.add(id)); state.pathIds = new Set(event.ids); event.ids.forEach((id) => changedCellIds.add(id)); state.pathLength = event.ids.length; } else if (event.type === "miss") { state.missed = true; state.pathLength = 0; } };
 const finishRun = () => { sound.stopHum(); if (state.activeId) changedCellIds.add(state.activeId); state.isRunning = false; state.isPaused = false; state.activeId = undefined; renderCurrentState(); };
-const playNextEvent = () => { clearPlaybackTimer(); if (!state.isRunning || state.isPaused) return renderCurrentState(); if (performance.now() < playbackHoldUntil) { playbackTimer = window.requestAnimationFrame(playNextEvent); return; } const speed = Number(elements.speedSlider.value) / 100; const targetBatch = 1 + speed ** 1.6 * 400; const ramp = Math.min(1, (performance.now() - playbackStartedAt) / 550); const batch = Math.max(1, Math.round(1 + (targetBatch - 1) * ramp)); for (let i = 0; i < batch; i += 1) { const event = state.events[state.currentEventIndex]; if (!event) return finishRun(); applyEvent(event, i === batch - 1); state.currentEventIndex += 1; if (event.type === "path" && state.events[state.currentEventIndex]?.type === "restart") { playbackHoldUntil = performance.now() + 650; break; } } renderCurrentState(); playbackTimer = window.requestAnimationFrame(playNextEvent); };
+const playNextEvent = () => { clearPlaybackTimer(); if (!state.isRunning || state.isPaused) return renderCurrentState(); if (performance.now() < playbackHoldUntil) { playbackTimer = window.requestAnimationFrame(playNextEvent); return; } const batch = playbackBatchSize(Number(elements.speedSlider.value), performance.now() - playbackStartedAt); for (let i = 0; i < batch; i += 1) { const event = state.events[state.currentEventIndex]; if (!event) return finishRun(); applyEvent(event, i === batch - 1); state.currentEventIndex += 1; if (event.type === "path" && state.events[state.currentEventIndex]?.type === "restart") { playbackHoldUntil = performance.now() + 650; break; } } renderCurrentState(); playbackTimer = window.requestAnimationFrame(playNextEvent); };
 const cancelPendingSearch = () => { searchJobId += 1; preparingSearch = false; pendingEvents = []; };
 const startPlayback = (events: SearchEvent[]) => { state.events = events; state.currentEventIndex = 0; state.isRunning = true; state.isPaused = false; state.visitedCount = 0; state.frontierCount = 0; state.pathLength = 0; state.activeId = undefined; state.visitedIds.clear(); state.frontierIds.clear(); state.targetVisitedIds.clear(); state.targetFrontierIds.clear(); state.pathIds.clear(); state.missed = false; playbackStartedAt = performance.now(); playbackHoldUntil = 0; renderCurrentState(); playNextEvent(); };
 const beginRun = () => { if (preparingSearch || state.isRunning) return; void sound.unlock(); state.originalGrid = cloneGrid(state.grid); const id = ++searchJobId; pendingEvents = []; preparingSearch = true; renderCurrentState(); searchWorker.postMessage({ id, algorithmId: selectedAlgorithm().id, grid: cloneGrid(state.grid) }); };
 searchWorker.addEventListener("message", ({ data }: MessageEvent<{ type: "events" | "complete" | "error"; id: number; events?: SearchEvent[] }>) => { if (data.id !== searchJobId) return; if (data.type === "events" && data.events) { pendingEvents.push(...data.events); return; } preparingSearch = false; if (data.type === "complete") startPlayback(pendingEvents); else renderCurrentState(); });
+const calculateRecordingEvents = (): Promise<SearchEvent[]> => new Promise((resolve, reject) => {
+  const worker = new Worker(new URL("./search-worker.ts", import.meta.url), { type: "module" });
+  const events: SearchEvent[] = [];
+  worker.addEventListener("error", (event) => { worker.terminate(); reject(new Error(event.message || "Recording search worker failed")); });
+  worker.addEventListener("message", ({ data }: MessageEvent<{ type: "events" | "complete" | "error"; id: number; events?: SearchEvent[] }>) => {
+    if (data.id !== 1) return;
+    if (data.type === "events" && data.events) { events.push(...data.events); return; }
+    worker.terminate();
+    if (data.type === "complete") resolve(events);
+    else reject(new Error(`Unable to calculate ${selectedAlgorithm().label}`));
+  });
+  worker.postMessage({ id: 1, algorithmId: selectedAlgorithm().id, grid: cloneGrid(state.grid) });
+});
+const installRecordingAutomation = () => {
+  if (!recordingConfig?.render) return;
+  let timeline: RecordingTimeline | undefined;
+  let recordingEvents: SearchEvent[] = [];
+  let appliedEventIndex = 0;
+  let nextFrameIndex = 0;
+  const afterPaint = () => new Promise<void>((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())));
+  const ready = async () => {
+    await recordingLoadPromise;
+    await document.fonts.ready;
+    if (!loadedCity) throw new Error("Recording city did not load");
+    await afterPaint();
+  };
+  window.__searchRecording = {
+    ready,
+    async prepare(): Promise<RecordingRenderMetadata> {
+      await ready();
+      recordingEvents = await calculateRecordingEvents();
+      timeline = buildRecordingTimeline(recordingEvents, {
+        speed: recordingConfig.speed,
+        leadSeconds: recordingConfig.leadSeconds,
+        tailSeconds: recordingConfig.tailSeconds,
+      });
+      state = createState(cloneGrid(state.originalGrid));
+      state.events = recordingEvents;
+      appliedEventIndex = 0;
+      nextFrameIndex = 0;
+      resetSearchOverlay = true;
+      renderCurrentState();
+      await afterPaint();
+      return {
+        width: 1_080,
+        height: 1_920,
+        fps: timeline.fps,
+        frameCount: timeline.frames.length,
+        durationSeconds: timeline.durationSeconds,
+        city: recordingConfig.city,
+        algorithm: recordingConfig.algorithm,
+      };
+    },
+    async renderFrame(index) {
+      if (!timeline) throw new Error("prepare() must be called before rendering frames");
+      if (index !== nextFrameIndex) throw new Error(`Expected recording frame ${nextFrameIndex}, received ${index}`);
+      const frame = timeline.frames[index];
+      if (!frame) throw new Error(`Recording frame ${index} is outside the timeline`);
+      while (appliedEventIndex < frame.eventEndIndex) {
+        state.currentEventIndex = appliedEventIndex;
+        applyEvent(recordingEvents[appliedEventIndex], false, false);
+        appliedEventIndex += 1;
+      }
+      state.currentEventIndex = appliedEventIndex;
+      state.isRunning = frame.phase === "playback" && appliedEventIndex < recordingEvents.length;
+      state.isPaused = false;
+      if (!state.isRunning) state.activeId = undefined;
+      renderCurrentState();
+      nextFrameIndex += 1;
+      await afterPaint();
+      return { index, phase: frame.phase };
+    },
+    async downloadAudio() {
+      if (!timeline) throw new Error("prepare() must be called before exporting audio");
+      const blob = await renderRecordingSoundtrack(timeline.audioCues, timeline.durationSeconds, recordingConfig.volume / 100);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "recording-audio.wav";
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    },
+  };
+};
 const resetRun = () => { cancelPendingSearch(); clearPlaybackTimer(); sound.stopHum(); state = createState(state.originalGrid); renderCurrentState(); };
 const randomize = () => { cancelPendingSearch(); clearPlaybackTimer(); sound.stopHum(); state = createState(isRecording ? (loadedCity ? createGridFromCityGraph(loadedCity, activeLayout?.startNodeId, activeLayout?.targetNodeId) : createCityGrid()) : createMazeGrid(Number(elements.densitySlider.value))); renderCurrentState(); };
 const clearGrid = () => { cancelPendingSearch(); clearPlaybackTimer(); sound.stopHum(); state = createState(createOpenGrid()); renderCurrentState(); };
@@ -348,7 +447,7 @@ elements.startButton.addEventListener("click", beginRun); elements.pauseButton.a
 if (isRecording) {
   const city = getElement<HTMLSelectElement>("#recording-city-select"), algorithm = getElement<HTMLInputElement>("#show-algorithm"), stats = getElement<HTMLInputElement>("#show-stats"), result = getElement<HTMLInputElement>("#show-result"), countdown = getElement<HTMLInputElement>("#enable-countdown"), countdownDisplay = getElement<HTMLElement>("#recording-countdown"), rotation = getElement<HTMLInputElement>("#rotation-slider"), zoom = getElement<HTMLInputElement>("#zoom-slider");
   city.addEventListener("change", () => { const url = new URL(window.location.href); url.searchParams.set("city", city.value); url.searchParams.delete("rotation"); url.searchParams.delete("zoom"); window.history.replaceState(null, "", url); rotationIsAutomatic = true; requestedZoom = 1; void loadRecordingCity(city.value); });
-  algorithm.addEventListener("change", () => elements.recording?.algorithmName.toggleAttribute("hidden", !algorithm.checked)); stats.addEventListener("change", () => elements.recording?.stats.toggleAttribute("hidden", !stats.checked)); result.addEventListener("change", () => elements.recording?.result.toggleAttribute("hidden", !result.checked));
+  algorithm.addEventListener("change", () => { elements.recording?.algorithmName.toggleAttribute("hidden", !algorithm.checked); optionalElement<HTMLElement>("#recording-title-display")?.toggleAttribute("hidden", !algorithm.checked); }); stats.addEventListener("change", () => elements.recording?.stats.toggleAttribute("hidden", !stats.checked)); result.addEventListener("change", () => elements.recording?.result.toggleAttribute("hidden", !result.checked));
   rotation.addEventListener("input", () => { rotationIsAutomatic = false; requestedRotation = Number(rotation.value); syncLayoutControls(); scheduleRecordingLayout(); });
   rotation.addEventListener("change", () => scheduleRecordingLayout(true));
   zoom.addEventListener("input", () => { requestedZoom = Number(zoom.value); syncLayoutControls(); scheduleRecordingLayout(); });
@@ -358,4 +457,8 @@ if (isRecording) {
   elements.startButton.addEventListener("click", (event) => { if (!countdown.checked || state.isRunning || preparingSearch) return; event.stopImmediatePropagation(); if (countdownTimer) window.clearInterval(countdownTimer); let seconds = 3; countdownDisplay.hidden = false; countdownDisplay.textContent = String(seconds); countdownTimer = window.setInterval(() => { seconds -= 1; countdownDisplay.textContent = seconds ? String(seconds) : "Go"; if (seconds < 0) { window.clearInterval(countdownTimer); countdownDisplay.hidden = true; beginRun(); } }, 1000); }, { capture: true });
 }
 renderCurrentState();
-if (isRecording) void loadRecordingCity();
+if (isRecording) {
+  recordingLoadPromise = loadRecordingCity();
+  installRecordingAutomation();
+  if (!recordingConfig?.render) void recordingLoadPromise;
+}

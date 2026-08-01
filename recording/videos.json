@@ -1,0 +1,12 @@
+{
+  "defaults": {
+    "speed": 58,
+    "volume": 42,
+    "leadSeconds": 1,
+    "tailSeconds": 1
+  },
+  "jobs": [
+    { "city": "ann-arbor", "algorithm": "bfs" },
+    { "city": "detroit", "algorithm": "astar" }
+  ]
+}

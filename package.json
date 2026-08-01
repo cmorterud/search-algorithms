@@ -8,9 +8,14 @@
     "build": "tsc && vite build",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "preview": "vite preview",
-    "city:download": "node scripts/download-city-graph.mjs"
+    "city:download": "node scripts/download-city-graph.mjs",
+    "video:setup": "playwright install chromium",
+    "video:render": "npm run build && node scripts/render-videos.mjs",
+    "video:smoke": "npm run build && node scripts/render-videos.mjs --city ann-arbor --algorithm bfs --output smoke.mp4 --speed 100 --lead .1 --tail .1 --force"
   },
   "devDependencies": {
+    "ffmpeg-static": "^5.3.0",
+    "playwright": "^1.62.1",
     "typescript": "^6.0.3",
     "vite": "^8.1.3"
   }

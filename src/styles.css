@@ -456,6 +456,35 @@ h1 {
 .search-recording-controls .algorithm-field, .search-recording-controls .compact-field { min-width: 0; }
 .search-recording-controls .algorithm-field { grid-column: span 2; }
 
+html[data-recording-render="true"],
+html[data-recording-render="true"] body,
+html[data-recording-render="true"] #app {
+  width: 540px;
+  height: 960px;
+  min-width: 540px;
+  min-height: 960px;
+  margin: 0;
+  overflow: hidden;
+  background: #020407;
+}
+
+html[data-recording-render="true"] .search-recording-page {
+  display: block;
+  width: 540px;
+  height: 960px;
+  min-height: 0;
+  padding: 0;
+}
+
+html[data-recording-render="true"] .search-recording-preview {
+  width: 540px;
+  height: 960px;
+  margin: 0;
+  box-shadow: none;
+}
+
+html[data-recording-render="true"] .recording-panel { display: none; }
+
 @media (max-width: 900px) {
   .search-recording-page { grid-template-columns: 1fr; }
   .search-recording-preview, .recording-panel { width: min(100%, 540px); margin-inline: auto; }
