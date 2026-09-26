@@ -136,7 +136,7 @@ test("New York auto-fit uses the metric Manhattan axis", () => {
 });
 
 test("checked-in city assets include explicit metric scales", () => {
-  const cityIds = ["ann-arbor", "detroit", "washington-dc", "seattle", "barcelona", "new-york"];
+  const cityIds = ["ann-arbor", "detroit", "washington-dc", "seattle", "barcelona", "new-york", "san-francisco"];
   cityIds.forEach((cityId) => {
     const asset = JSON.parse(readFileSync(new URL(`../public/cities/${cityId}.json`, import.meta.url), "utf8")) as CityGraph;
     assert.ok(asset.metersPerUnit && Number.isFinite(asset.metersPerUnit.x) && asset.metersPerUnit.x > 0);

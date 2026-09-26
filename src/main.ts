@@ -21,6 +21,7 @@ const RECORDING_CITIES = [
   { id: "seattle", label: "Seattle" },
   { id: "barcelona", label: "Barcelona" },
   { id: "new-york", label: "New York" },
+  { id: "san-francisco", label: "San Francisco" },
 ] as const;
 const DEFAULT_RECORDING_CITY = RECORDING_CITIES[0].id;
 const recordingConfig = isRecording ? parseRecordingConfig(
