@@ -2,11 +2,15 @@
   "defaults": {
     "speed": 58,
     "volume": 42,
-    "leadSeconds": 1,
-    "tailSeconds": 1
+    "leadSeconds": 0.25,
+    "tailSeconds": 1.25
   },
   "jobs": [
     { "city": "ann-arbor", "algorithm": "bfs" },
-    { "city": "detroit", "algorithm": "astar" }
+    { "city": "ann-arbor", "algorithm": "dijkstra" },
+    { "city": "ann-arbor", "algorithm": "astar" }
+  ],
+  "compilations": [
+    { "output": "ann-arbor-comparison.mp4" }
   ]
 }

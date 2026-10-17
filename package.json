@@ -11,6 +11,8 @@
     "city:download": "node scripts/download-city-graph.mjs",
     "video:setup": "playwright install chromium",
     "video:render": "npm run build && node scripts/render-videos.mjs",
+    "video:batch": "npm run video:render -- --manifest recording/videos.json",
+    "video:assemble": "node scripts/render-videos.mjs --assemble-only",
     "video:smoke": "npm run build && node scripts/render-videos.mjs --city ann-arbor --algorithm bfs --output smoke.mp4 --speed 100 --lead .1 --tail .1 --force"
   },
   "devDependencies": {

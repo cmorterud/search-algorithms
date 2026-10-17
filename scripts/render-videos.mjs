@@ -1,19 +1,23 @@
 import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rename, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import ffmpegPath from "ffmpeg-static";
 import { chromium } from "playwright";
 import { preview } from "vite";
+import { assembleVideo, createBatchPlan } from "./video-batch.mjs";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 
 const option = (name) => {
   const index = args.indexOf(`--${name}`);
-  return index >= 0 ? args[index + 1] : undefined;
+  if (index < 0) return undefined;
+  const value = args[index + 1];
+  if (!value || value.startsWith("--")) throw new Error(`--${name} requires a value`);
+  return value;
 };
 const hasFlag = (name) => args.includes(`--${name}`);
 const numericOption = (name) => {
@@ -27,22 +31,20 @@ const numericOption = (name) => {
 const manifestPath = option("manifest");
 const outputDirectory = resolve(projectRoot, option("output-dir") ?? "recordings");
 const force = hasFlag("force");
+const assembleOnly = hasFlag("assemble-only");
 
-const readJobs = async () => {
+const readBatch = async () => {
   if (manifestPath) {
     const absoluteManifest = isAbsolute(manifestPath) ? manifestPath : resolve(projectRoot, manifestPath);
     const manifest = JSON.parse(await readFile(absoluteManifest, "utf8"));
-    if (!Array.isArray(manifest.jobs) || manifest.jobs.length === 0) {
-      throw new Error(`Manifest ${absoluteManifest} must contain a non-empty jobs array`);
-    }
-    return manifest.jobs.map((job) => ({ ...(manifest.defaults ?? {}), ...job }));
+    return createBatchPlan(manifest, option("combine"));
   }
   const city = option("city");
   const algorithm = option("algorithm");
   if (!city || !algorithm) {
     throw new Error("Provide --city and --algorithm, or use --manifest <path>");
   }
-  return [{
+  return createBatchPlan({ jobs: [{
     city,
     algorithm,
     speed: numericOption("speed"),
@@ -55,14 +57,7 @@ const readJobs = async () => {
     showStats: !hasFlag("hide-stats"),
     showResult: !hasFlag("hide-result"),
     output: option("output"),
-  }];
-};
-
-const safeOutputName = (job) => {
-  const requested = job.output ?? `${job.city}--${job.algorithm}.mp4`;
-  const name = basename(String(requested)).replace(/[^a-zA-Z0-9._-]+/g, "-");
-  if (!name || name === "." || name === "..") throw new Error(`Invalid output name: ${requested}`);
-  return name.toLowerCase().endsWith(".mp4") ? name : `${name}.mp4`;
+  }] }, option("combine"));
 };
 
 const addParameter = (parameters, name, value) => {
@@ -92,10 +87,11 @@ const renderJob = async (browser, baseUrl, job, jobIndex, jobCount) => {
   if (!job || typeof job.city !== "string" || typeof job.algorithm !== "string") {
     throw new Error("Every render job requires string city and algorithm values");
   }
-  const outputPath = join(outputDirectory, safeOutputName(job));
+  const outputPath = join(outputDirectory, job.output);
   if (!force) {
     try {
-      if ((await stat(outputPath)).size > 0) {
+      const existing = await stat(outputPath);
+      if (existing.isFile() && existing.size > 0) {
         console.log(`[${jobIndex + 1}/${jobCount}] Skipping existing ${outputPath}`);
         return { status: "skipped", outputPath };
       }
@@ -174,10 +170,7 @@ const renderJob = async (browser, baseUrl, job, jobIndex, jobCount) => {
   }
 };
 
-const main = async () => {
-  if (!ffmpegPath) throw new Error("The bundled FFmpeg binary is unavailable on this platform");
-  const jobs = await readJobs();
-  await mkdir(outputDirectory, { recursive: true });
+const renderJobs = async (jobs) => {
   const server = await preview({ root: projectRoot, preview: { host: "127.0.0.1", port: 4173 } });
   const baseUrl = server.resolvedUrls?.local?.[0];
   if (!baseUrl) { await closeServer(server); throw new Error("Vite preview did not provide a local URL"); }
@@ -203,7 +196,25 @@ const main = async () => {
     await closeServer(server);
   }
   if (failures.length > 0) {
-    throw new Error(`${failures.length} of ${jobs.length} video jobs failed`);
+    throw new Error(`${failures.length} of ${jobs.length} video jobs failed. Compilations were not assembled; rerun to retry the missing clips.`);
+  }
+};
+
+const main = async () => {
+  if (!ffmpegPath) throw new Error("The bundled FFmpeg binary is unavailable on this platform");
+  const { jobs, compilations } = await readBatch();
+  if (assembleOnly && compilations.length === 0) {
+    throw new Error("Nothing to assemble. Add compilations to the manifest or pass --combine <filename.mp4>.");
+  }
+  await mkdir(outputDirectory, { recursive: true });
+  if (!assembleOnly) await renderJobs(jobs);
+  for (const compilation of compilations) {
+    console.log(`Assembling ${compilation.clips.length} clips into ${compilation.output}`);
+    const outputPath = await assembleVideo({
+      clipPaths: compilation.clips.map((clip) => join(outputDirectory, clip)),
+      outputPath: join(outputDirectory, compilation.output),
+    });
+    console.log(`Wrote compilation ${outputPath}`);
   }
 };
 
