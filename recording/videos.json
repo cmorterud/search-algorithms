@@ -5,19 +5,46 @@
     "leadSeconds": 0.25,
     "tailSeconds": 1.25
   },
-  "cities": ["ann-arbor", "new-york", "barcelona"],
+  "cities": [
+    "ann-arbor",
+    "new-york",
+    "barcelona",
+    "boston",
+    "paris",
+    "amsterdam",
+    "copenhagen",
+    "lisbon"
+  ],
   "algorithmGroups": [
     {
       "id": "search-styles",
-      "algorithms": ["bfs", "dfs", "astar"]
+      "algorithms": [
+        "bfs",
+        "dfs",
+        "dijkstra",
+        "greedy",
+        "astar"
+      ]
     },
     {
       "id": "two-ended",
-      "algorithms": ["bfs", "bidirectional-bfs", "astar", "bidirectional-astar"]
+      "algorithms": [
+        "bfs",
+        "bidirectional-bfs",
+        "dijkstra",
+        "astar",
+        "bidirectional-astar"
+      ]
     },
     {
       "id": "speed-vs-quality",
-      "algorithms": ["astar", "weighted-astar", "greedy"]
+      "algorithms": [
+        "astar",
+        "weighted-astar",
+        "ara-star",
+        "greedy",
+        "beam"
+      ]
     }
   ]
 }

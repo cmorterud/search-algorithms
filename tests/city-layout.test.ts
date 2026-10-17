@@ -1,3 +1,4 @@
+import { RECORDING_CITIES } from "../src/cities.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -136,7 +137,7 @@ test("New York auto-fit uses the metric Manhattan axis", () => {
 });
 
 test("checked-in city assets include explicit metric scales", () => {
-  const cityIds = ["ann-arbor", "detroit", "washington-dc", "seattle", "barcelona", "new-york", "san-francisco"];
+  const cityIds = RECORDING_CITIES.map(({ id }) => id);
   cityIds.forEach((cityId) => {
     const asset = JSON.parse(readFileSync(new URL(`../public/cities/${cityId}.json`, import.meta.url), "utf8")) as CityGraph;
     assert.ok(asset.metersPerUnit && Number.isFinite(asset.metersPerUnit.x) && asset.metersPerUnit.x > 0);

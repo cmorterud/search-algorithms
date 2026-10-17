@@ -1,3 +1,4 @@
+import { RECORDING_CITIES } from "./cities";
 import "./styles.css";
 import { algorithms } from "./algorithms";
 import { layoutCityGraph } from "./city-layout";
@@ -14,15 +15,6 @@ const STANDARD_SIZE = { rows: 100, cols: 200 };
 // much more closely in the portrait recording.
 const PORTRAIT_SIZE = { rows: 584, cols: 360 };
 const isRecording = /\/recording\/?$/.test(window.location.pathname);
-const RECORDING_CITIES = [
-  { id: "ann-arbor", label: "Ann Arbor" },
-  { id: "detroit", label: "Detroit" },
-  { id: "washington-dc", label: "Washington, DC" },
-  { id: "seattle", label: "Seattle" },
-  { id: "barcelona", label: "Barcelona" },
-  { id: "new-york", label: "New York" },
-  { id: "san-francisco", label: "San Francisco" },
-] as const;
 const DEFAULT_RECORDING_CITY = RECORDING_CITIES[0].id;
 const recordingConfig = isRecording ? parseRecordingConfig(
   window.location.href,

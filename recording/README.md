@@ -4,7 +4,7 @@ Run commands from the project root. Install dependencies with `npm install` and
 the rendering browser once with `npm run video:setup`.
 
 ```sh
-# Render the pilot: three cities × three algorithm groups = nine videos.
+# Render the default batch: eight cities × three algorithm groups = 24 videos.
 npm run video:batch
 
 # Preview the expanded jobs and finished filenames without rendering anything.
@@ -30,18 +30,19 @@ Compilations are rebuilt each time, so changing their order takes effect immedia
 
 ## Batch configuration
 
-The default `videos.json` crosses Ann Arbor, New York, and Barcelona with three
-curated, ordered groups:
+The default `videos.json` crosses Ann Arbor, New York, Barcelona, Boston, Paris,
+Amsterdam, Copenhagen, and Lisbon with three curated, ordered groups:
 
 | Group ID | Algorithm order |
 | --- | --- |
-| `search-styles` | BFS → DFS → A* |
-| `two-ended` | BFS → Bidirectional BFS → A* → Bidirectional A* |
-| `speed-vs-quality` | A* → Weighted A* → Greedy |
+| `search-styles` | BFS → DFS → Dijkstra → Greedy → A* |
+| `two-ended` | BFS → Bidirectional BFS → Dijkstra → A* → Bidirectional A* |
+| `speed-vs-quality` | A* → Weighted A* → ARA* → Greedy → Beam Search |
 
-This produces nine finished videos from 21 unique clips. For example,
+Each suite contains five algorithms. This produces 24 finished videos from 80 unique clips. For example,
 `barcelona--search-styles.mp4` references `barcelona--bfs.mp4`,
-`barcelona--dfs.mp4`, and `barcelona--astar.mp4`. A* is rendered once for each city
+`barcelona--dfs.mp4`, `barcelona--dijkstra.mp4`, `barcelona--greedy.mp4`, and
+`barcelona--astar.mp4`. A* is rendered once for each city
 and reused in all three groups. Every group uses the same city scene and defaults,
 including playback speed. Playback time represents visualization pacing, not
 algorithm execution time.
@@ -54,11 +55,11 @@ algorithm execution time.
     "leadSeconds": 0.25,
     "tailSeconds": 1.25
   },
-  "cities": ["ann-arbor", "new-york", "barcelona"],
+  "cities": ["ann-arbor", "new-york", "barcelona", "boston", "paris", "amsterdam", "copenhagen", "lisbon"],
   "algorithmGroups": [
-    { "id": "search-styles", "algorithms": ["bfs", "dfs", "astar"] },
-    { "id": "two-ended", "algorithms": ["bfs", "bidirectional-bfs", "astar", "bidirectional-astar"] },
-    { "id": "speed-vs-quality", "algorithms": ["astar", "weighted-astar", "greedy"] }
+    { "id": "search-styles", "algorithms": ["bfs", "dfs", "dijkstra", "greedy", "astar"] },
+    { "id": "two-ended", "algorithms": ["bfs", "bidirectional-bfs", "dijkstra", "astar", "bidirectional-astar"] },
+    { "id": "speed-vs-quality", "algorithms": ["astar", "weighted-astar", "ara-star", "greedy", "beam"] }
   ]
 }
 ```
@@ -77,7 +78,7 @@ holds the initial view and algorithm label before playback. `tailSeconds` holds
 the finished result before the cut. The pause between algorithms is the previous
 clip's tail plus the next clip's lead; no scrolling, controls, or manual reset is
 captured. A tail of at least half a second also lets the ending chime finish.
-The pilot uses a 1.5-second pause between algorithms (1.25-second tail plus
+The default batch uses a 1.5-second pause between algorithms (1.25-second tail plus
 0.25-second lead).
 
 For individual presets or manual grouping, the original `jobs`/`compilations`
@@ -134,15 +135,20 @@ The temporary assembly directory is removed after success or failure.
 ## GitHub Actions
 
 After the workflow is pushed to the default branch, open **Actions → Render
-Videos → Run workflow**. Leave `manifest` at `recording/videos.json` for the pilot.
+Videos → Run workflow**. Leave `manifest` at `recording/videos.json` for the default batch.
 Optional `city` and `group` fields accept the IDs above; blank fields select all.
 The workflow runs only when manually triggered.
 
+The five new city IDs are `boston`, `paris`, `amsterdam`, `copenhagen`, and
+`lisbon`. Their OpenStreetMap graphs are bundled in `public/cities/`, so runners
+do not need to download map data. For example, set `city` to `lisbon` to render
+only Lisbon.
+
 A planning job expands the manifest, validates the selection, and runs the tests.
 Its output defines a dynamic GitHub Actions matrix with one rendering job per
-city, running up to three cities in parallel. The default pilot creates three
-city jobs, each rendering seven unique clips and assembling three finished
-videos: nine videos in total. City/group filters narrow this matrix. Adding a
+city, running up to three cities in parallel. The default batch creates eight
+city jobs, each rendering ten unique clips and assembling three finished
+videos: 24 videos in total. City/group filters narrow this matrix. Adding a
 city in the manifest automatically adds a job; the workflow contains no hardcoded
 city list.
 
