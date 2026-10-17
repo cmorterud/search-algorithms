@@ -5,12 +5,19 @@
     "leadSeconds": 0.25,
     "tailSeconds": 1.25
   },
-  "jobs": [
-    { "city": "ann-arbor", "algorithm": "bfs" },
-    { "city": "ann-arbor", "algorithm": "dijkstra" },
-    { "city": "ann-arbor", "algorithm": "astar" }
-  ],
-  "compilations": [
-    { "output": "ann-arbor-comparison.mp4" }
+  "cities": ["ann-arbor", "new-york", "barcelona"],
+  "algorithmGroups": [
+    {
+      "id": "search-styles",
+      "algorithms": ["bfs", "dfs", "astar"]
+    },
+    {
+      "id": "two-ended",
+      "algorithms": ["bfs", "bidirectional-bfs", "astar", "bidirectional-astar"]
+    },
+    {
+      "id": "speed-vs-quality",
+      "algorithms": ["astar", "weighted-astar", "greedy"]
+    }
   ]
 }

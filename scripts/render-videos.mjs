@@ -37,8 +37,9 @@ const readBatch = async () => {
   if (manifestPath) {
     const absoluteManifest = isAbsolute(manifestPath) ? manifestPath : resolve(projectRoot, manifestPath);
     const manifest = JSON.parse(await readFile(absoluteManifest, "utf8"));
-    return createBatchPlan(manifest, option("combine"));
+    return createBatchPlan(manifest, option("combine"), { city: option("city"), group: option("group") });
   }
+  if (option("group")) throw new Error("--group requires a matrix --manifest");
   const city = option("city");
   const algorithm = option("algorithm");
   if (!city || !algorithm) {
@@ -201,8 +202,12 @@ const renderJobs = async (jobs) => {
 };
 
 const main = async () => {
-  if (!ffmpegPath) throw new Error("The bundled FFmpeg binary is unavailable on this platform");
   const { jobs, compilations } = await readBatch();
+  if (hasFlag("plan")) {
+    console.log(JSON.stringify({ jobs, compilations }, null, 2));
+    return;
+  }
+  if (!ffmpegPath) throw new Error("The bundled FFmpeg binary is unavailable on this platform");
   if (assembleOnly && compilations.length === 0) {
     throw new Error("Nothing to assemble. Add compilations to the manifest or pass --combine <filename.mp4>.");
   }

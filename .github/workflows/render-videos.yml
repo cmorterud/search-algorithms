@@ -1,0 +1,120 @@
+name: Render Videos
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest:
+        description: Batch manifest path
+        type: string
+        default: recording/videos.json
+        required: true
+      city:
+        description: Optional city ID (blank runs every city)
+        type: string
+        required: false
+      group:
+        description: Optional algorithm group ID (blank runs every group)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan and validate batch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      matrix: ${{ steps.batch.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Plan batch
+        id: batch
+        shell: bash
+        env:
+          VIDEO_MANIFEST: ${{ inputs.manifest }}
+          VIDEO_CITY: ${{ inputs.city }}
+          VIDEO_GROUP: ${{ inputs.group }}
+        run: |
+          args=(--manifest "$VIDEO_MANIFEST")
+          if [[ -n "$VIDEO_CITY" ]]; then args+=(--city "$VIDEO_CITY"); fi
+          if [[ -n "$VIDEO_GROUP" ]]; then args+=(--group "$VIDEO_GROUP"); fi
+          node scripts/render-videos.mjs "${args[@]}" --plan > video-plan.json
+          node --input-type=module <<'JS'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import { createWorkflowMatrix } from './scripts/video-batch.mjs';
+          const plan = JSON.parse(readFileSync('video-plan.json', 'utf8'));
+          const matrix = createWorkflowMatrix(plan);
+          appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify(matrix)}\n`);
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+            `## Video batch\n\nCity jobs: ${matrix.include.length}. Unique clips: ${plan.jobs.length}. Finished videos: ${plan.compilations.length}.\n\n` +
+            plan.compilations.map(video => `- ${video.output}`).join('\n') + '\n');
+          JS
+
+      - name: Test
+        run: npm test
+
+  render:
+    name: Render ${{ matrix.city }}
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore city batch plan
+        env:
+          VIDEO_PLAN: ${{ toJSON(matrix.plan) }}
+        run: |
+          node --input-type=module <<'JS'
+          import { writeFileSync } from 'node:fs';
+          writeFileSync('video-plan.json', process.env.VIDEO_PLAN);
+          JS
+
+      - name: Install Chromium and system dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Build
+        run: npm run build
+
+      - name: Render clips and assemble videos
+        run: node scripts/render-videos.mjs --manifest video-plan.json
+
+      - name: Upload videos and batch plan
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: videos-${{ matrix.city }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            recordings/*.mp4
+            !recordings/*.partial.mp4
+            video-plan.json
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 0

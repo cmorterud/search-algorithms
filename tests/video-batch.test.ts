@@ -1,11 +1,110 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import ffmpegPath from "ffmpeg-static";
-import { assembleVideo, createBatchPlan } from "../scripts/video-batch.mjs";
+import { assembleVideo, createBatchPlan, createWorkflowMatrix } from "../scripts/video-batch.mjs";
+import { algorithms } from "../src/algorithms.ts";
+
+test("pilot matrix produces nine ordered videos and reuses 21 city/algorithm clips", async () => {
+  const manifest = JSON.parse(await readFile("recording/videos.json", "utf8"));
+  const plan = createBatchPlan(manifest);
+  assert.equal(plan.jobs.length, 21);
+  assert.equal(plan.compilations.length, 9);
+  assert.equal(new Set(plan.jobs.map((job) => job.output)).size, 21);
+  for (const city of manifest.cities) {
+    await access(`public/cities/${city}.json`);
+    assert.equal(plan.jobs.filter((job) => job.city === city && job.algorithm === "astar").length, 1);
+    for (const group of manifest.algorithmGroups) {
+      const video = plan.compilations.find((video) => video.output === `${city}--${group.id}.mp4`);
+      assert.deepEqual(video?.clips, group.algorithms.map((algorithm: string) => `${city}--${algorithm}.mp4`));
+    }
+  }
+  for (const job of plan.jobs) {
+    assert.ok(algorithms.some((algorithm) => algorithm.id === job.algorithm), `supported algorithm: ${job.algorithm}`);
+    assert.equal(job.speed, 58);
+    assert.equal(job.leadSeconds + job.tailSeconds, 1.5);
+  }
+  // GitHub renders the expanded plan so planning and execution select identical clips.
+  assert.deepEqual(createBatchPlan(plan), plan);
+});
+
+test("matrix selections render only clips needed for the selected videos", async () => {
+  const manifest = JSON.parse(await readFile("recording/videos.json", "utf8"));
+  const city = createBatchPlan(manifest, undefined, { city: "barcelona" });
+  assert.equal(city.jobs.length, 7);
+  assert.equal(city.compilations.length, 3);
+  const group = createBatchPlan(manifest, undefined, { group: "search-styles" });
+  assert.equal(group.jobs.length, 9);
+  assert.equal(group.compilations.length, 3);
+  const selected = createBatchPlan(manifest, undefined, { city: "barcelona", group: "search-styles" });
+  assert.deepEqual(selected.jobs.map((job) => job.algorithm), ["bfs", "dfs", "astar"]);
+  assert.deepEqual(selected.compilations.map((video) => video.output), ["barcelona--search-styles.mp4"]);
+  assert.throws(() => createBatchPlan(manifest, undefined, { city: "unknown" }), /Unknown batch city/);
+  assert.throws(() => createBatchPlan(manifest, undefined, { group: "unknown" }), /Unknown algorithm group/);
+});
+
+test("workflow matrix partitions every pilot clip and video into independent city jobs", async () => {
+  const manifest = JSON.parse(await readFile("recording/videos.json", "utf8"));
+  const plan = createBatchPlan(manifest);
+  const matrix = createWorkflowMatrix(plan);
+  assert.deepEqual(matrix.include.map((row) => row.city), manifest.cities);
+  assert.equal(matrix.include.flatMap((row) => row.plan.jobs).length, 21);
+  assert.equal(matrix.include.flatMap((row) => row.plan.compilations).length, 9);
+  assert.deepEqual(matrix.include.flatMap((row) => row.plan.jobs), plan.jobs);
+  assert.deepEqual(matrix.include.flatMap((row) => row.plan.compilations), plan.compilations);
+  for (const row of matrix.include) {
+    assert.equal(row.plan.jobs.length, 7);
+    assert.equal(row.plan.compilations.length, 3);
+    assert.ok(row.plan.jobs.every((job) => job.city === row.city));
+    assert.deepEqual(createBatchPlan(row.plan), row.plan, "each runner receives a self-contained renderable plan");
+    const outputs = new Set(row.plan.jobs.map((job) => job.output));
+    assert.ok(row.plan.compilations.every((video) => video.clips.every((clip) => outputs.has(clip))));
+    assert.equal(row.plan.jobs.filter((job) => job.algorithm === "astar").length, 1);
+  }
+  const selected = createWorkflowMatrix(createBatchPlan(manifest, undefined, { city: "new-york", group: "search-styles" }));
+  assert.equal(selected.include.length, 1);
+  assert.equal(selected.include[0].plan.jobs.length, 3);
+  assert.equal(selected.include[0].plan.compilations.length, 1);
+});
+
+test("workflow matrix rejects compilations that depend on another city's runner", () => {
+  assert.throws(() => createWorkflowMatrix({
+    jobs: [
+      { city: "ann-arbor", algorithm: "bfs" },
+      { city: "barcelona", algorithm: "bfs" },
+    ],
+    compilations: [{ output: "cross-city.mp4" }],
+  }), /spans cities/);
+});
+
+test("rejects ambiguous matrix definitions before rendering", () => {
+  const matrix = { cities: ["ann-arbor"], algorithmGroups: [{ id: "styles", algorithms: ["bfs", "astar"] }] };
+  assert.throws(() => createBatchPlan({ ...matrix, cities: ["ann-arbor", "ann-arbor"] }), /duplicate IDs/);
+  assert.throws(() => createBatchPlan({ ...matrix, algorithmGroups: [{ id: "styles", algorithms: [] }] }), /non-empty array/);
+  assert.throws(() => createBatchPlan({ ...matrix, algorithmGroups: [{ id: "styles", algorithms: ["bfs", "bfs"] }] }), /duplicate IDs/);
+  assert.throws(() => createBatchPlan({ ...matrix, algorithmGroups: [matrix.algorithmGroups[0], matrix.algorithmGroups[0]] }), /duplicate IDs/);
+  assert.throws(() => createBatchPlan({ ...matrix, jobs: [] }), /not both/);
+});
+
+test("CLI preview supports matrix filters without writing outputs or starting Chromium", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "matrix-plan-"));
+  try {
+    const outputDirectory = join(directory, "not-created");
+    const stdout = execFileSync(process.execPath, [
+      "scripts/render-videos.mjs", "--manifest", "recording/videos.json", "--plan",
+      "--city", "new-york", "--group", "two-ended", "--output-dir", outputDirectory,
+    ], { encoding: "utf8" });
+    const plan = JSON.parse(stdout);
+    assert.equal(plan.jobs.length, 4);
+    assert.equal(plan.compilations[0].output, "new-york--two-ended.mp4");
+    await assert.rejects(access(outputDirectory), { code: "ENOENT" });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("batch defaults and explicit compilation ordering support multiple videos", () => {
   const plan = createBatchPlan({
